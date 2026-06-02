@@ -153,13 +153,8 @@ function ExperienceCard({ exp, index }) {
           className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
         />
         <div className={`absolute inset-0 bg-gradient-to-t ${exp.accent} via-transparent to-transparent`} />
-        <span className="absolute left-3 top-3 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide backdrop-blur-sm border border-white/10 ${exp.badge}">
+        <span className={`absolute left-3 top-3 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide backdrop-blur-sm border border-white/10 ${exp.badge}`}>
           {exp.badgeText}
-        </span>
-        <span className="absolute left-3 top-3 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide backdrop-blur-sm">
-          <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${exp.badge}`}>
-            {exp.badgeText}
-          </span>
         </span>
         <div className="absolute bottom-3 left-4">
           <span className="text-2xl">{exp.icon}</span>
