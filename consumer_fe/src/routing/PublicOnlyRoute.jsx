@@ -1,15 +1,16 @@
 import { Navigate, Outlet } from "react-router";
+import { resolvePostAuthRedirect } from "../constants/roles";
 import { ROUTES } from "../constants/routes";
 import { useAuth } from "../hooks/useAuth";
 
 /**
- * Login and signup only — authenticated users are redirected away.
+ * Login and signup only — authenticated users are redirected to their role home.
  */
 export default function PublicOnlyRoute() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
 
   if (isAuthenticated) {
-    return <Navigate to={ROUTES.dashboard} replace />;
+    return <Navigate to={resolvePostAuthRedirect(null, user?.role)} replace />;
   }
 
   return <Outlet />;

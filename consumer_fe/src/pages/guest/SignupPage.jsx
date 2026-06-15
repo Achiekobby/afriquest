@@ -1,10 +1,13 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
 import { ROUTES } from "../../constants/routes";
+import { resolvePostAuthRedirect, ROLE_META, USER_ROLES } from "../../constants/roles";
 import { useAuth } from "../../hooks/useAuth";
 import { images } from "../../config/images";
 import OtpInput from "../../components/misc/OtpInput";
+import AccountTypePicker from "../../components/auth/AccountTypePicker";
+import AppIcon from "../../components/icons/AppIcon";
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -16,29 +19,38 @@ const slideIn = {
 };
 
 const perks = [
-  { icon: "🗺️", text: "Save & track your tour inquiries" },
-  { icon: "🔔", text: "Get early access to new itineraries" },
-  { icon: "💬", text: "Direct line to your travel consultant" },
-  { icon: "🌍", text: "Exclusive group travel offers" },
+  { icon: "map", text: "Save & track your tour inquiries" },
+  { icon: "bell", text: "Get early access to new itineraries" },
+  { icon: "message-circle", text: "Direct line to your travel consultant" },
+  { icon: "globe", text: "Exclusive group travel offers" },
 ];
 
 export default function SignupPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const presetRole = location.state?.role;
 
-  const [step, setStep] = useState("details"); // "details" | "otp"
+  const [step, setStep] = useState("role"); // "role" | "details" | "otp"
+  const [role, setRole] = useState(presetRole || USER_ROLES.TOURIST);
   const [fields, setFields] = useState({
     firstName: "",
     lastName: "",
     email: "",
     location: "",
     phone: "",
+    organization: "",
   });
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [otpError, setOtpError] = useState("");
+  const panelRef = useRef(null);
+
+  useEffect(() => {
+    panelRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [step]);
 
   function validateField(field, val) {
     const v = val.trim();
@@ -62,6 +74,9 @@ export default function SignupPage() {
         if (!v) return "Phone number is required.";
         if (!/^\+?[\d\s\-()]{7,15}$/.test(v)) return "Enter a valid phone number.";
         return "";
+      case "organization":
+        if (role === USER_ROLES.SITE_OPERATOR && !v) return "Organization or site name is required.";
+        return "";
       default:
         return "";
     }
@@ -82,6 +97,7 @@ export default function SignupPage() {
   function handleSendOtp(e) {
     e.preventDefault();
     const allFields = ["firstName", "lastName", "email", "location", "phone"];
+    if (role === USER_ROLES.SITE_OPERATOR) allFields.push("organization");
     const allTouched = Object.fromEntries(allFields.map((f) => [f, true]));
     const allErrors = Object.fromEntries(allFields.map((f) => [f, validateField(f, fields[f])]));
     setTouched(allTouched);
@@ -112,10 +128,20 @@ export default function SignupPage() {
         phone: fields.phone,
         email: fields.email,
         location: fields.location,
+        role,
+        organization: role === USER_ROLES.SITE_OPERATOR ? fields.organization.trim() : undefined,
       });
-      navigate(ROUTES.dashboard, { replace: true });
+      navigate(resolvePostAuthRedirect(null, role), { replace: true });
     }, 900);
   }
+
+  const roleMeta = ROLE_META[role];
+  const signupSteps = [
+    { id: "role", label: "Account type" },
+    { id: "details", label: "Your details" },
+    { id: "otp", label: "Verify OTP" },
+  ];
+  const stepIndex = signupSteps.findIndex((s) => s.id === step);
 
   // Shared input class builder
   function inputClass(field) {
@@ -141,10 +167,10 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full min-h-0">
 
       {/* ── Left panel — fixed, non-scrollable ── */}
-      <div className="relative hidden h-full overflow-hidden lg:flex lg:w-[52%] xl:w-[55%]">
+      <div className="relative hidden h-full overflow-hidden lg:flex lg:w-[44%] xl:w-[46%]">
         <img
           src={images.home.kenya}
           alt="AfriQwest travel"
@@ -210,8 +236,8 @@ export default function SignupPage() {
             <ul className="mt-8 space-y-3">
               {perks.map((p) => (
                 <li key={p.text} className="flex items-center gap-3 text-sm text-white/75">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-base backdrop-blur-sm">
-                    {p.icon}
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-brand-gold backdrop-blur-sm">
+                    <AppIcon name={p.icon} className="h-4 w-4" strokeWidth={2} />
                   </span>
                   {p.text}
                 </li>
@@ -231,9 +257,10 @@ export default function SignupPage() {
       </div>
 
       {/* ── Right panel — scrollable ── */}
-      <div className="flex h-full flex-1 flex-col items-center justify-center overflow-y-auto bg-brand-cream px-5 py-12 sm:px-10">
+      <div ref={panelRef} className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-brand-cream">
+        <div className="flex w-full flex-col items-center px-5 py-8 sm:px-10 sm:py-10 lg:px-14 xl:px-20">
         {/* Mobile top bar */}
-        <div className="mb-8 w-full lg:hidden">
+        <div className="mb-8 w-full max-w-[560px] lg:hidden">
           <Link
             to={ROUTES.home}
             className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-muted transition-colors hover:text-brand-ink"
@@ -248,28 +275,28 @@ export default function SignupPage() {
           </div>
         </div>
 
-        <div className="w-full max-w-[460px]">
+        <div className="w-full max-w-[560px] lg:max-w-[600px] xl:max-w-[640px]">
           {/* Step indicator */}
-          <div className="mb-8 flex items-center gap-2">
-            {["details", "otp"].map((s, i) => (
-              <div key={s} className="flex items-center gap-2">
+          <div className="mb-8 flex flex-wrap items-center gap-2">
+            {signupSteps.map((s, i) => (
+              <div key={s.id} className="flex items-center gap-2">
                 <div
                   className={[
                     "flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-all duration-300",
-                    step === s || (s === "details" && step === "otp")
+                    stepIndex > i || step === s.id
                       ? "bg-brand-green text-white"
                       : "border-2 border-brand-border bg-white text-brand-muted",
                   ].join(" ")}
                 >
-                  {s === "details" && step === "otp" ? (
+                  {stepIndex > i ? (
                     <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} aria-hidden><path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                  ) : i + 1}
+                  ) : (
+                    i + 1
+                  )}
                 </div>
-                <span className={`text-xs font-medium ${step === s ? "text-brand-ink" : "text-brand-muted"}`}>
-                  {s === "details" ? "Your details" : "Verify OTP"}
-                </span>
-                {i === 0 && (
-                  <div className={`mx-1 h-px w-8 transition-all duration-300 ${step === "otp" ? "bg-brand-green" : "bg-brand-border"}`} />
+                <span className={`text-xs font-medium ${step === s.id ? "text-brand-ink" : "text-brand-muted"}`}>{s.label}</span>
+                {i < signupSteps.length - 1 && (
+                  <div className={`mx-1 h-px w-6 transition-all duration-300 ${stepIndex > i ? "bg-brand-green" : "bg-brand-border"}`} />
                 )}
               </div>
             ))}
@@ -277,15 +304,60 @@ export default function SignupPage() {
 
           <AnimatePresence mode="wait">
 
-            {/* ── Step 1: Details ── */}
+            {/* ── Step 1: Account type ── */}
+            {step === "role" && (
+              <motion.div key="role" {...slideIn}>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">Get started</p>
+                <h1 className="mt-2 text-2xl font-bold tracking-tight text-brand-ink sm:text-3xl">
+                  Join AfriQwest
+                </h1>
+                <p className="mt-2 text-sm leading-relaxed text-brand-muted">
+                  Travelers book unforgettable trips. Site operators manage listings and departures.
+                </p>
+
+                <div className="mt-8">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-brand-muted">I am joining as</p>
+                  <AccountTypePicker value={role} onChange={setRole} />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setStep("details")}
+                  className="group mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-green py-3.5 text-sm font-semibold text-white shadow-[0_8px_24px_-8px_rgba(45,90,71,0.6)] transition-all hover:bg-brand-green-dark"
+                >
+                  Continue as {roleMeta.shortLabel}
+                  <svg className="h-4 w-4 transition-transform group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                </button>
+
+                <p className="mt-6 text-center text-sm text-brand-muted">
+                  Already have an account?{" "}
+                  <Link to={ROUTES.login} state={{ role }} className="font-semibold text-brand-green hover:text-brand-green-dark">
+                    Sign in
+                  </Link>
+                </p>
+              </motion.div>
+            )}
+
+            {/* ── Step 2: Details ── */}
             {step === "details" && (
               <motion.div key="details" {...slideIn}>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">Get started</p>
+                <button
+                  type="button"
+                  onClick={() => setStep("role")}
+                  className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-brand-muted transition-colors hover:text-brand-ink"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+                  Back
+                </button>
+
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">{roleMeta.shortLabel} registration</p>
                 <h1 className="mt-2 text-2xl font-bold tracking-tight text-brand-ink sm:text-3xl">
                   Create your account
                 </h1>
                 <p className="mt-2 text-sm leading-relaxed text-brand-muted">
-                  Register with your phone number. We'll verify you with a one-time code.
+                  {role === USER_ROLES.SITE_OPERATOR
+                    ? "Tell us about you and your tourist site. We'll verify your phone with a one-time code."
+                    : "Register with your details. We'll verify your phone with a one-time code."}
                 </p>
 
                 <form onSubmit={handleSendOtp} className="mt-8 space-y-4">
@@ -394,6 +466,32 @@ export default function SignupPage() {
                     <FieldError field="location" />
                   </div>
 
+                  {/* Organization — operators only */}
+                  {role === USER_ROLES.SITE_OPERATOR && (
+                    <div>
+                      <label htmlFor="organization" className="block text-xs font-semibold uppercase tracking-[0.12em] text-brand-muted">
+                        Tourist site / Organization
+                      </label>
+                      <div className="relative mt-2">
+                        <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
+                          <svg className="h-4 w-4 text-brand-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                            <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />
+                          </svg>
+                        </span>
+                        <input
+                          id="organization"
+                          type="text"
+                          value={fields.organization}
+                          onChange={(e) => handleFieldChange("organization", e.target.value)}
+                          onBlur={() => handleBlur("organization")}
+                          placeholder="e.g. Elmina Castle Heritage Site"
+                          className={inputClass("organization")}
+                        />
+                      </div>
+                      <FieldError field="organization" />
+                    </div>
+                  )}
+
                   {/* Phone */}
                   <div>
                     <label htmlFor="phone" className="block text-xs font-semibold uppercase tracking-[0.12em] text-brand-muted">
@@ -441,13 +539,6 @@ export default function SignupPage() {
                   </button>
                 </form>
 
-                <p className="mt-6 text-center text-sm text-brand-muted">
-                  Already have an account?{" "}
-                  <Link to={ROUTES.login} className="font-semibold text-brand-green hover:text-brand-green-dark">
-                    Sign in
-                  </Link>
-                </p>
-
                 <p className="mt-4 text-center text-[11px] leading-relaxed text-brand-muted/60">
                   By creating an account you agree to our{" "}
                   <span className="underline underline-offset-2 cursor-pointer">Terms of Service</span>{" "}
@@ -457,7 +548,7 @@ export default function SignupPage() {
               </motion.div>
             )}
 
-            {/* ── Step 2: OTP ── */}
+            {/* ── Step 3: OTP ── */}
             {step === "otp" && (
               <motion.div key="otp" {...slideIn}>
                 <button
@@ -543,6 +634,7 @@ export default function SignupPage() {
             )}
 
           </AnimatePresence>
+        </div>
         </div>
       </div>
     </div>

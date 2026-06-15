@@ -2,9 +2,11 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
 import { ROUTES } from "../../constants/routes";
+import { resolvePostAuthRedirect, ROLE_META, USER_ROLES } from "../../constants/roles";
 import { useAuth } from "../../hooks/useAuth";
 import { images } from "../../config/images";
 import OtpInput from "../../components/misc/OtpInput";
+import AccountTypePicker from "../../components/auth/AccountTypePicker";
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -21,8 +23,10 @@ export default function LoginPage() {
   const location = useLocation();
 
   const redirectTo = location.state?.from?.pathname || ROUTES.dashboard;
+  const presetRole = location.state?.role;
 
-  const [step, setStep] = useState("phone"); // "phone" | "otp"
+  const [step, setStep] = useState("role"); // "role" | "phone" | "otp"
+  const [role, setRole] = useState(presetRole || USER_ROLES.TOURIST);
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
@@ -67,8 +71,13 @@ export default function LoginPage() {
         setOtpError("Incorrect code. Please check and try again.");
         return;
       }
-      login("dev-token", { name: "Traveler", phone });
-      navigate(redirectTo, { replace: true });
+      login("dev-token", {
+        name: role === USER_ROLES.SITE_OPERATOR ? "Site Operator" : "Traveler",
+        phone,
+        role,
+        organization: role === USER_ROLES.SITE_OPERATOR ? "Cape Coast Heritage Trust" : undefined,
+      });
+      navigate(resolvePostAuthRedirect(redirectTo, role), { replace: true });
     }, 900);
   }
 
@@ -78,11 +87,19 @@ export default function LoginPage() {
     setStep("phone");
   }
 
+  const roleMeta = ROLE_META[role];
+  const loginSteps = [
+    { id: "role", label: "Account type" },
+    { id: "phone", label: "Phone" },
+    { id: "otp", label: "Verify" },
+  ];
+  const stepIndex = loginSteps.findIndex((s) => s.id === step);
+
   return (
-    <div className="flex h-full">
+    <div className="flex h-full min-h-0">
 
       {/* ── Left panel — fixed, non-scrollable ── */}
-      <div className="relative hidden h-full overflow-hidden lg:flex lg:w-[52%] xl:w-[55%]">
+      <div className="relative hidden h-full overflow-hidden lg:flex lg:w-[44%] xl:w-[46%]">
         <img
           src={images.home.ghana}
           alt="AfriQwest travel"
@@ -172,9 +189,10 @@ export default function LoginPage() {
       </div>
 
       {/* ── Right panel — scrollable ── */}
-      <div className="flex h-full flex-1 flex-col items-center justify-center overflow-y-auto bg-brand-cream px-5 py-12 sm:px-10">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-brand-cream">
+        <div className="flex w-full flex-col items-center px-5 py-8 sm:px-10 sm:py-10 lg:px-14 xl:px-20">
         {/* Mobile top bar */}
-        <div className="mb-8 w-full lg:hidden">
+        <div className="mb-8 w-full max-w-[560px] lg:hidden">
           <Link
             to={ROUTES.home}
             className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-muted transition-colors hover:text-brand-ink"
@@ -189,18 +207,86 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="w-full max-w-[400px]">
+        <div className="w-full max-w-[560px] lg:max-w-[600px] xl:max-w-[640px]">
+          <div className="mb-8 flex items-center gap-2">
+            {loginSteps.map((s, i) => (
+              <div key={s.id} className="flex items-center gap-2">
+                <div
+                  className={[
+                    "flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-all duration-300",
+                    stepIndex > i || step === s.id
+                      ? "bg-brand-green text-white"
+                      : "border-2 border-brand-border bg-white text-brand-muted",
+                  ].join(" ")}
+                >
+                  {stepIndex > i ? (
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} aria-hidden><path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  ) : (
+                    i + 1
+                  )}
+                </div>
+                <span className={`text-xs font-medium ${step === s.id ? "text-brand-ink" : "text-brand-muted"}`}>{s.label}</span>
+                {i < loginSteps.length - 1 && (
+                  <div className={`mx-1 h-px w-6 transition-all duration-300 ${stepIndex > i ? "bg-brand-green" : "bg-brand-border"}`} />
+                )}
+              </div>
+            ))}
+          </div>
+
           <AnimatePresence mode="wait">
 
-            {/* ── Step 1: Phone ── */}
-            {step === "phone" && (
-              <motion.div key="phone" {...slideIn}>
+            {/* ── Step 1: Account type ── */}
+            {step === "role" && (
+              <motion.div key="role" {...slideIn}>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">Welcome back</p>
                 <h1 className="mt-2 text-2xl font-bold tracking-tight text-brand-ink sm:text-3xl">
                   Sign in to AfriQwest
                 </h1>
                 <p className="mt-2 text-sm leading-relaxed text-brand-muted">
-                  Enter your phone number and we'll send you a one-time code.
+                  Choose how you use AfriQwest — travelers and site operators sign in separately.
+                </p>
+
+                <div className="mt-8">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-brand-muted">I am signing in as</p>
+                  <AccountTypePicker value={role} onChange={setRole} />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setStep("phone")}
+                  className="group mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-green py-3.5 text-sm font-semibold text-white shadow-[0_8px_24px_-8px_rgba(45,90,71,0.6)] transition-all hover:bg-brand-green-dark"
+                >
+                  Continue as {roleMeta.shortLabel}
+                  <svg className="h-4 w-4 transition-transform group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                </button>
+
+                <p className="mt-6 text-center text-sm text-brand-muted">
+                  New here?{" "}
+                  <Link to={ROUTES.signup} state={{ role }} className="font-semibold text-brand-green hover:text-brand-green-dark">
+                    Create an account
+                  </Link>
+                </p>
+              </motion.div>
+            )}
+
+            {/* ── Step 2: Phone ── */}
+            {step === "phone" && (
+              <motion.div key="phone" {...slideIn}>
+                <button
+                  type="button"
+                  onClick={() => setStep("role")}
+                  className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-brand-muted transition-colors hover:text-brand-ink"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+                  Back
+                </button>
+
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">{roleMeta.shortLabel} sign-in</p>
+                <h1 className="mt-2 text-2xl font-bold tracking-tight text-brand-ink sm:text-3xl">
+                  Enter your phone
+                </h1>
+                <p className="mt-2 text-sm leading-relaxed text-brand-muted">
+                  We'll send a one-time code to verify your {roleMeta.shortLabel.toLowerCase()} account.
                 </p>
 
                 <form onSubmit={handleSendOtp} className="mt-8 space-y-5">
@@ -262,17 +348,10 @@ export default function LoginPage() {
                     )}
                   </button>
                 </form>
-
-                <p className="mt-6 text-center text-sm text-brand-muted">
-                  New here?{" "}
-                  <Link to={ROUTES.signup} className="font-semibold text-brand-green hover:text-brand-green-dark">
-                    Create an account
-                  </Link>
-                </p>
               </motion.div>
             )}
 
-            {/* ── Step 2: OTP ── */}
+            {/* ── Step 3: OTP ── */}
             {step === "otp" && (
               <motion.div key="otp" {...slideIn}>
                 {/* Back button */}
@@ -359,6 +438,7 @@ export default function LoginPage() {
             )}
 
           </AnimatePresence>
+        </div>
         </div>
       </div>
     </div>

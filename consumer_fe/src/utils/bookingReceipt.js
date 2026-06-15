@@ -68,21 +68,34 @@ export function buildReceiptHtml(data) {
     depositPercent,
     leadTraveler,
     additionalTravelers = [],
+    bookingType,
+    groupDetails,
+    specialRequests,
+    dietaryNeeds,
     issuedAt = new Date().toISOString(),
   } = data;
 
   const statusLabel =
-    paymentMode === "now"
-      ? payType === "deposit"
-        ? "Deposit paid — balance due before departure"
-        : "Paid in full"
-      : `Reserved — ${depositPercent}% deposit due within ${payLaterHoldHours}h`;
+    paymentMode === "online"
+      ? "Paid in full — online"
+      : paymentMode === "onsite"
+        ? "Reserved — pay on site at check-in"
+        : paymentMode === "now"
+          ? payType === "deposit"
+            ? "Deposit paid — balance due before departure"
+            : "Paid in full"
+          : `Reserved — ${depositPercent}% deposit due within ${payLaterHoldHours}h`;
 
   const amountLine =
-    paymentMode === "now"
+    paymentMode === "online"
       ? `<tr><td>Amount paid today</td><td><strong>${escapeHtml(formatCurrency(payNowAmount))}</strong></td></tr>`
-      : `<tr><td>Total tour cost</td><td>${escapeHtml(formatCurrency(subtotal))}</td></tr>
-         <tr><td>Deposit due within ${payLaterHoldHours}h</td><td><strong>${escapeHtml(formatCurrency(depositAmount))}</strong></td></tr>`;
+      : paymentMode === "onsite"
+        ? `<tr><td>Total due on site</td><td><strong>${escapeHtml(formatCurrency(subtotal))}</strong></td></tr>
+           <tr><td>Amount paid today</td><td>$0 — pay at check-in</td></tr>`
+        : paymentMode === "now"
+          ? `<tr><td>Amount paid today</td><td><strong>${escapeHtml(formatCurrency(payNowAmount))}</strong></td></tr>`
+          : `<tr><td>Total tour cost</td><td>${escapeHtml(formatCurrency(subtotal))}</td></tr>
+             <tr><td>Deposit due within ${payLaterHoldHours}h</td><td><strong>${escapeHtml(formatCurrency(depositAmount))}</strong></td></tr>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -149,6 +162,11 @@ export function buildReceiptHtml(data) {
           <tr><td>Departure date</td><td>${escapeHtml(selectedDate)}</td></tr>
           <tr><td>Duration</td><td>${escapeHtml(tour.duration)}</td></tr>
           <tr><td>Travelers</td><td>${travelers}</td></tr>
+          <tr><td>Booking type</td><td>${escapeHtml(bookingType === "group" ? "Group booking" : "Individual")}</td></tr>
+          ${groupDetails?.groupName ? `<tr><td>Group</td><td>${escapeHtml(groupDetails.groupName)}</td></tr>` : ""}
+          ${groupDetails?.groupType ? `<tr><td>Group type</td><td>${escapeHtml(groupDetails.groupType)}</td></tr>` : ""}
+          ${dietaryNeeds ? `<tr><td>Dietary / accessibility</td><td>${escapeHtml(dietaryNeeds)}</td></tr>` : ""}
+          ${specialRequests ? `<tr><td>Special requests</td><td>${escapeHtml(specialRequests)}</td></tr>` : ""}
           <tr><td>Status</td><td><span class="status">${escapeHtml(statusLabel)}</span></td></tr>
           ${amountLine}
           <tr><td>Issued</td><td>${escapeHtml(formatDate(issuedAt))}</td></tr>

@@ -1,6 +1,8 @@
 const STORAGE_KEY = "afriqwest_bookings";
 
 export function getBookingStatus(booking) {
+  if (booking.paymentMode === "online") return "paid";
+  if (booking.paymentMode === "onsite") return "pay_onsite";
   if (booking.paymentMode === "now") {
     return booking.payType === "full" ? "paid" : "deposit_paid";
   }

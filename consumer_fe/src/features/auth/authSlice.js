@@ -1,4 +1,5 @@
 import { createSlice } from "@reduxjs/toolkit";
+import { USER_ROLES } from "../../constants/roles";
 
 const initialState = {
   token: null,
@@ -28,5 +29,7 @@ export const selectUser = (state) => state.auth.user;
 export const selectToken = (state) => state.auth.token;
 export const selectIsAuthenticated = (state) =>
   Boolean(state.auth.token && state.auth.user);
+export const selectUserRole = (state) =>
+  state.auth.user?.role ?? USER_ROLES.TOURIST;
 
 export default authSlice.reducer;

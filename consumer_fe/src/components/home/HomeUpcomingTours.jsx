@@ -103,9 +103,9 @@ function UpcomingTourCard({ tour, index }) {
       </div>
 
       <Link
-        to={ROUTES.tourDetail(tour.slug)}
+        to={ROUTES.tourBook(tour.slug)}
         className="absolute inset-0 z-10 rounded-2xl"
-        aria-label={`Reserve ${tour.name}`}
+        aria-label={`Book ${tour.name}`}
       />
     </motion.article>
   );

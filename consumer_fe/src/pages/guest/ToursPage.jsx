@@ -1,9 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
 import Container from "../../components/layout/Container";
 import { ROUTES } from "../../constants/routes";
-import { allTours, FILTER_CATEGORIES } from "../../data/toursData";
+import {
+  liveTours,
+  FILTER_CATEGORIES,
+  COUNTRY_FILTER_META,
+  isCountryFilter,
+  isLiveCountryFilter,
+} from "../../data/toursData";
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -32,7 +38,7 @@ function TourCard({ tour, index }) {
       transition={{ duration: 0.4, ease: EASE, delay: Math.min(index * 0.04, 0.28) }}
       className="group flex flex-col"
     >
-      <Link to={ROUTES.tourDetail(tour.slug)} className="flex flex-col gap-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 rounded-xl">
+      <Link to={ROUTES.tourBook(tour.slug)} aria-label={`Book ${tour.name}`} className="flex flex-col gap-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 rounded-xl">
         {/* Image */}
         <div className="relative aspect-square overflow-hidden rounded-xl bg-brand-border/30">
           {!imgError ? (
@@ -189,15 +195,69 @@ function SortDropdown({ value, onChange }) {
   );
 }
 
+function CountryComingSoonEmpty({ filterId, onViewGhana }) {
+  const meta = COUNTRY_FILTER_META[filterId];
+
+  return (
+    <motion.div
+      key={`coming-soon-${filterId}`}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 8 }}
+      transition={{ duration: 0.35, ease: EASE }}
+      className="mx-auto max-w-lg py-16 text-center"
+    >
+      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.5rem] border border-brand-border/60 bg-brand-cream text-4xl shadow-sm">
+        {meta.icon}
+      </div>
+      <p className="mt-5 text-xs font-semibold uppercase tracking-[0.14em] text-brand-orange">Coming soon</p>
+      <h2 className="mt-2 text-2xl font-bold text-brand-ink">{meta.name} tours</h2>
+      <p className="mt-2 text-sm font-medium text-brand-green">{meta.tagline}</p>
+      <p className="mt-3 text-sm leading-relaxed text-brand-muted">{meta.description}</p>
+      <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <button
+          type="button"
+          onClick={onViewGhana}
+          className="inline-flex items-center gap-2 rounded-xl bg-brand-green px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_-10px_rgba(45,90,71,0.5)] transition-all hover:bg-brand-green-dark"
+        >
+          Explore Ghana tours
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M5 12h14M13 6l6 6-6 6" />
+          </svg>
+        </button>
+        <Link
+          to={ROUTES.contact}
+          className="inline-flex items-center gap-2 rounded-xl border border-brand-border bg-white px-6 py-3 text-sm font-semibold text-brand-ink shadow-sm transition-all hover:border-brand-green/30 hover:shadow-md"
+        >
+          Notify me when live
+        </Link>
+      </div>
+    </motion.div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
+function resolveFilterFromParams(countryParam) {
+  if (countryParam && FILTER_CATEGORIES.some((cat) => cat.id === countryParam)) {
+    return countryParam;
+  }
+  return "all";
+}
+
 export default function ToursPage() {
-  const [activeFilter, setActiveFilter] = useState("all");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const countryParam = searchParams.get("country");
+  const [activeFilter, setActiveFilter] = useState(() => resolveFilterFromParams(countryParam));
   const [sort, setSort]         = useState("recommended");
   const [search, setSearch]     = useState("");
   const [filterScrolled, setFilterScrolled] = useState(false);
   const filterRef           = useRef(null);
   const scrollContainerRef  = useRef(null);
   const searchRef           = useRef(null);
+
+  useEffect(() => {
+    setActiveFilter(resolveFilterFromParams(countryParam));
+  }, [countryParam]);
 
   // Detect when the filter bar has reached its sticky position
   useEffect(() => {
@@ -211,10 +271,14 @@ export default function ToursPage() {
   }, []);
 
   // Filter + search + sort
+  const isComingSoonCountry = isCountryFilter(activeFilter) && !isLiveCountryFilter(activeFilter);
+
   const filtered = (() => {
+    if (isComingSoonCountry) return [];
+
     let list = activeFilter === "all"
-      ? allTours
-      : allTours.filter((t) => t.categories.includes(activeFilter));
+      ? liveTours
+      : liveTours.filter((t) => t.categories.includes(activeFilter));
 
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -236,11 +300,16 @@ export default function ToursPage() {
 
   const handleFilter = useCallback((id) => {
     setActiveFilter(id);
+    if (id === "all") {
+      setSearchParams({}, { replace: true });
+    } else {
+      setSearchParams({ country: id }, { replace: true });
+    }
     if (scrollContainerRef.current) {
       const btn = scrollContainerRef.current.querySelector(`[data-cat="${id}"]`);
       btn?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
     }
-  }, []);
+  }, [setSearchParams]);
 
   const activeCatLabel = FILTER_CATEGORIES.find((c) => c.id === activeFilter)?.label ?? "All tours";
   const hasActiveFilters = activeFilter !== "all" || search.trim() !== "";
@@ -248,6 +317,11 @@ export default function ToursPage() {
   function clearAll() {
     setActiveFilter("all");
     setSearch("");
+    setSearchParams({}, { replace: true });
+  }
+
+  function viewGhanaTours() {
+    handleFilter("ghana");
   }
 
   return (
@@ -270,7 +344,7 @@ export default function ToursPage() {
                 Explore our tours
               </h1>
               <p className="mt-1 text-sm text-brand-muted">
-                {allTours.length} curated experiences across Ghana, Kenya &amp; South Africa
+                {liveTours.length} live Ghana experiences · Kenya &amp; South Africa coming soon
               </p>
             </div>
 
@@ -355,12 +429,22 @@ export default function ToursPage() {
                 transition={{ duration: 0.2 }}
                 className="text-sm text-brand-muted"
               >
-                <span className="font-semibold text-brand-ink">{filtered.length} tours</span>
-                {activeFilter !== "all" && (
-                  <> · <span className="font-medium text-brand-green">{activeCatLabel}</span></>
-                )}
-                {search.trim() && (
-                  <> · &ldquo;<span className="font-medium text-brand-ink">{search}</span>&rdquo;</>
+                {isComingSoonCountry ? (
+                  <>
+                    <span className="font-semibold text-brand-ink">Coming soon</span>
+                    {" · "}
+                    <span className="font-medium text-brand-green">{activeCatLabel}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold text-brand-ink">{filtered.length} tours</span>
+                    {activeFilter !== "all" && (
+                      <> · <span className="font-medium text-brand-green">{activeCatLabel}</span></>
+                    )}
+                    {search.trim() && (
+                      <> · &ldquo;<span className="font-medium text-brand-ink">{search}</span>&rdquo;</>
+                    )}
+                  </>
                 )}
               </motion.p>
             </AnimatePresence>
@@ -379,7 +463,9 @@ export default function ToursPage() {
 
           {/* 6-column Airbnb-style grid */}
           <AnimatePresence mode="wait">
-            {filtered.length > 0 ? (
+            {isComingSoonCountry ? (
+              <CountryComingSoonEmpty filterId={activeFilter} onViewGhana={viewGhanaTours} />
+            ) : filtered.length > 0 ? (
               <motion.div
                 key={`grid-${activeFilter}-${sort}`}
                 initial={{ opacity: 0 }}

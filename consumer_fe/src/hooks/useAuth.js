@@ -4,14 +4,17 @@ import {
   selectIsAuthenticated,
   selectToken,
   selectUser,
+  selectUserRole,
   setCredentials,
 } from "../features/auth/authSlice";
+import { getHomeRouteForRole, isOperatorRole, isTouristRole } from "../constants/roles";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 
 export function useAuth() {
   const dispatch = useAppDispatch();
   const user = useAppSelector(selectUser);
   const token = useAppSelector(selectToken);
+  const role = useAppSelector(selectUserRole);
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
 
   const login = useCallback(
@@ -28,7 +31,11 @@ export function useAuth() {
   return {
     user,
     token,
+    role,
     isAuthenticated,
+    isTourist: isTouristRole(role),
+    isOperator: isOperatorRole(role),
+    homeRoute: getHomeRouteForRole(role),
     login,
     logout,
   };

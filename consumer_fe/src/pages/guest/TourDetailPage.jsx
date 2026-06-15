@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { Link, useParams, Navigate } from "react-router";
+import { Link, useNavigate, useParams, Navigate } from "react-router";
 import { motion } from "motion/react";
 import Container from "../../components/layout/Container";
-import TourBookingFlow from "../../components/tours/TourBookingFlow";
 import { ROUTES } from "../../constants/routes";
 import { getTourBySlug, getRelatedTours } from "../../data/toursData";
 import { getWhatsAppUrl } from "../../config/env";
@@ -109,13 +108,14 @@ function BookingCard({ tour, onBook }) {
 
 export default function TourDetailPage() {
   const { slug } = useParams();
+  const navigate = useNavigate();
   const tour = getTourBySlug(slug);
-  const [bookingOpen, setBookingOpen] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
 
   if (!tour) return <Navigate to={ROUTES.tours} replace />;
 
   const related = getRelatedTours(slug);
+  const goToBook = () => navigate(ROUTES.tourBook(slug));
 
   return (
     <div className="pb-24 lg:pb-16">
@@ -265,7 +265,7 @@ export default function TourDetailPage() {
             {/* Sticky booking sidebar */}
             <div className="hidden lg:block">
               <div className="sticky top-[88px]">
-                <BookingCard tour={tour} onBook={() => setBookingOpen(true)} />
+                <BookingCard tour={tour} onBook={goToBook} />
               </div>
             </div>
           </div>
@@ -308,7 +308,7 @@ export default function TourDetailPage() {
           </div>
           <button
             type="button"
-            onClick={() => setBookingOpen(true)}
+            onClick={goToBook}
             className="flex-1 max-w-[200px] rounded-xl bg-brand-orange py-3 text-sm font-semibold text-white shadow-md"
           >
             Book now
@@ -316,7 +316,6 @@ export default function TourDetailPage() {
         </div>
       </div>
 
-      <TourBookingFlow tour={tour} open={bookingOpen} onClose={() => setBookingOpen(false)} />
     </div>
   );
 }

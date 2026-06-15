@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
 import Container from "../../components/layout/Container";
 import { ROUTES } from "../../constants/routes";
@@ -19,6 +19,7 @@ const FILTERS = [
 const STATUS_CONFIG = {
   paid: { label: "Paid in full", className: "bg-brand-green/10 text-brand-green ring-brand-green/20" },
   deposit_paid: { label: "Deposit paid", className: "bg-emerald-100 text-emerald-700 ring-emerald-200" },
+  pay_onsite: { label: "Pay on site", className: "bg-brand-gold/15 text-brand-orange ring-brand-gold/30" },
   reserved: { label: "Pending payment", className: "bg-brand-orange/10 text-brand-orange ring-brand-orange/20" },
 };
 
@@ -93,11 +94,19 @@ function BookingCard({ booking, index }) {
 
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-brand-border/40 pt-4">
             <span className="text-sm font-bold text-brand-ink">
-              {booking.paymentMode === "now"
+              {booking.paymentMode === "online"
                 ? formatCurrency(booking.payNowAmount)
                 : formatCurrency(booking.subtotal)}
               <span className="ml-1 text-xs font-normal text-brand-muted">
-                {booking.paymentMode === "now" && booking.payType === "deposit" ? " deposit paid" : booking.paymentMode === "later" ? " total" : ""}
+                {booking.paymentMode === "online"
+                  ? " paid online"
+                  : booking.paymentMode === "onsite"
+                    ? " due on site"
+                    : booking.paymentMode === "now" && booking.payType === "deposit"
+                      ? " deposit paid"
+                      : booking.paymentMode === "later"
+                        ? " total"
+                        : ""}
               </span>
             </span>
           </div>
@@ -148,9 +157,12 @@ function BookingCard({ booking, index }) {
 }
 
 export default function MyBookingsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const welcomeRef = searchParams.get("booked");
   const [bookings, setBookings] = useState([]);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [showWelcome, setShowWelcome] = useState(Boolean(welcomeRef));
 
   const loadBookings = useCallback(() => {
     setBookings(getBookings());
@@ -162,18 +174,27 @@ export default function MyBookingsPage() {
     return () => window.removeEventListener("afriqwest:bookings-updated", loadBookings);
   }, [loadBookings]);
 
+  useEffect(() => {
+    if (!welcomeRef) return undefined;
+    const timer = window.setTimeout(() => {
+      setShowWelcome(false);
+      setSearchParams({}, { replace: true });
+    }, 8000);
+    return () => window.clearTimeout(timer);
+  }, [welcomeRef, setSearchParams]);
+
   const stats = useMemo(() => ({
     total: bookings.length,
     upcoming: bookings.filter(isUpcoming).length,
     paid: bookings.filter((b) => b.status === "paid" || b.status === "deposit_paid").length,
-    pending: bookings.filter((b) => b.status === "reserved").length,
+    pending: bookings.filter((b) => b.status === "reserved" || b.status === "pay_onsite").length,
   }), [bookings]);
 
   const filtered = useMemo(() => {
     let list = bookings;
     if (filter === "upcoming") list = list.filter(isUpcoming);
     if (filter === "paid") list = list.filter((b) => b.status === "paid" || b.status === "deposit_paid");
-    if (filter === "reserved") list = list.filter((b) => b.status === "reserved");
+    if (filter === "reserved") list = list.filter((b) => b.status === "reserved" || b.status === "pay_onsite");
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -228,6 +249,39 @@ export default function MyBookingsPage() {
       {/* List */}
       <section className="px-4 py-10 sm:px-6 lg:px-8">
         <Container>
+          <AnimatePresence>
+            {showWelcome && welcomeRef && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="mb-6 flex flex-col gap-3 rounded-2xl border border-brand-green/30 bg-brand-green/5 p-5 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-green/15 text-brand-green">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                  </div>
+                  <div>
+                    <p className="font-bold text-brand-ink">Booking confirmed!</p>
+                    <p className="mt-0.5 text-sm text-brand-muted">
+                      Reference <span className="font-mono font-semibold text-brand-green">{welcomeRef}</span> — your receipt has been downloaded. Present it on arrival.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const booking = bookings.find((b) => b.bookingRef === welcomeRef);
+                    if (booking) downloadBookingReceipt(booking);
+                  }}
+                  className="shrink-0 rounded-xl bg-brand-green px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-green-dark"
+                >
+                  Download receipt again
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Toolbar */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap gap-2">

@@ -27,7 +27,7 @@ const avatars = [images.home.ghana, images.home.kenya, images.home.southAfrica];
 const collageTiles = [
   {
     key: "ghana",
-    src: images.home.ghana,
+    src: images.home.hero_three,
     alt: "Ghana heritage coast",
     label: "Ghana",
     className: "col-span-5 row-span-5 col-start-1 row-start-1 lg:translate-y-1",
@@ -35,7 +35,7 @@ const collageTiles = [
   },
   {
     key: "kenya",
-    src: images.home.kenya,
+    src: images.home.hero_two,
     alt: "Kenya safari",
     label: "Kenya",
     className: "col-span-7 row-span-6 col-start-6 row-start-1 -translate-y-2 lg:-translate-y-3",
@@ -43,17 +43,17 @@ const collageTiles = [
   },
   {
     key: "hero",
-    src: images.home.hero,
+    src: images.home.hero_one,
     alt: "African landscape",
     label: "Heritage Coast",
     className: "col-span-5 row-span-7 col-start-1 row-start-6 translate-y-2 lg:translate-y-3",
     delay: 0.4,
   },
   {
-    key: "south-africa",
-    src: images.home.southAfrica,
-    alt: "South Africa discovery",
-    label: "South Africa",
+    key: "ghana-castle",
+    src: images.home.hero_four,
+    alt: "Ghana discovery",
+    label: "Ghana",
     className: "col-span-7 row-span-6 col-start-6 row-start-7 -translate-y-1 lg:-translate-y-2",
     delay: 0.5,
   },

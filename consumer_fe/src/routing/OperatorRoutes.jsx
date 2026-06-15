@@ -1,0 +1,27 @@
+import { Route } from "react-router";
+import OperatorLayout from "../layouts/OperatorLayout";
+import OperatorBookingsPage from "../pages/operator/OperatorBookingsPage";
+import OperatorDashboardPage from "../pages/operator/OperatorDashboardPage";
+import OperatorProfilePage from "../pages/operator/OperatorProfilePage";
+import OperatorTourFormPage from "../pages/operator/OperatorTourFormPage";
+import OperatorToursPage from "../pages/operator/OperatorToursPage";
+import { USER_ROLES } from "../constants/roles";
+import ProtectedRoute from "./ProtectedRoute";
+import RoleRoute from "./RoleRoute";
+
+const operatorRoutes = (
+  <Route element={<ProtectedRoute />}>
+    <Route element={<RoleRoute allowedRoles={[USER_ROLES.SITE_OPERATOR]} />}>
+      <Route path="operator" element={<OperatorLayout />}>
+        <Route path="dashboard" element={<OperatorDashboardPage />} />
+        <Route path="tours" element={<OperatorToursPage />} />
+        <Route path="tours/new" element={<OperatorTourFormPage />} />
+        <Route path="tours/:id/edit" element={<OperatorTourFormPage />} />
+        <Route path="bookings" element={<OperatorBookingsPage />} />
+        <Route path="profile" element={<OperatorProfilePage />} />
+      </Route>
+    </Route>
+  </Route>
+);
+
+export default operatorRoutes;

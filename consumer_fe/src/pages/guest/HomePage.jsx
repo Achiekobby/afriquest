@@ -1,6 +1,6 @@
 import HomeCta from "../../components/home/HomeCta";
 import HomeDestinations from "../../components/home/HomeDestinations";
-import HomeFeaturedTours from "../../components/home/HomeFeaturedTours";
+import HomeHubs from "../../components/home/HomeHubs";
 import HomeFeatures from "../../components/home/HomeFeatures";
 import HomeHero from "../../components/home/HomeHero";
 import HomePartners from "../../components/home/HomePartners";
@@ -12,7 +12,7 @@ export default function HomePage() {
     <>
       <HomeHero />
       <HomePartners />
-      <HomeFeaturedTours />
+      <HomeHubs />
       <HomeUpcomingTours />
       <HomeFeatures />
       <HomeDestinations />

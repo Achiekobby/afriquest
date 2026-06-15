@@ -55,7 +55,7 @@ export const featuredTours = [
 
 export const upcomingTours = [
   {
-    slug: "ghana-heritage-june-2025",
+    slug: "ghana-heritage-classic",
     name: "Ghana Heritage Tour",
     country: "Ghana",
     departDate: "June 14, 2025",
@@ -68,7 +68,7 @@ export const upcomingTours = [
     image: images.home.destinations.ghana,
   },
   {
-    slug: "ghana-heritage-sept-2025",
+    slug: "ghana-cultural-immersion",
     name: "Ghana Cultural Immersion",
     country: "Ghana",
     departDate: "September 10, 2025",
@@ -81,7 +81,7 @@ export const upcomingTours = [
     image: images.home.ghana,
   },
   {
-    slug: "kenya-safari-july-2025",
+    slug: "kenya-safari-culture",
     name: "Kenya Safari & Culture",
     country: "Kenya",
     departDate: "July 3, 2025",
@@ -94,7 +94,7 @@ export const upcomingTours = [
     image: images.home.destinations.kenya,
   },
   {
-    slug: "kenya-safari-aug-2025",
+    slug: "maasai-mara-experience",
     name: "Kenya Maasai Mara Experience",
     country: "Kenya",
     departDate: "August 5, 2025",
@@ -107,7 +107,7 @@ export const upcomingTours = [
     image: images.home.kenya,
   },
   {
-    slug: "ghana-heritage-dec-2025",
+    slug: "ghana-year-end-heritage",
     name: "Ghana Year-End Heritage",
     country: "Ghana",
     departDate: "December 5, 2025",
@@ -120,7 +120,7 @@ export const upcomingTours = [
     image: images.home.ghana,
   },
   {
-    slug: "kenya-safari-sept-2025",
+    slug: "kenya-autumn-safari",
     name: "Kenya Autumn Safari",
     country: "Kenya",
     departDate: "September 22, 2025",
@@ -133,7 +133,7 @@ export const upcomingTours = [
     image: images.home.kenya,
   },
   {
-    slug: "south-africa-oct-2025",
+    slug: "south-africa-discovery",
     name: "South Africa Discovery",
     country: "South Africa",
     departDate: "October 18, 2025",
@@ -146,7 +146,7 @@ export const upcomingTours = [
     image: images.home.destinations.southAfrica,
   },
   {
-    slug: "south-africa-nov-2025",
+    slug: "cape-town-johannesburg",
     name: "Cape Town & Johannesburg",
     country: "South Africa",
     departDate: "November 12, 2025",
@@ -184,6 +184,36 @@ export const topDestinations = [
     tagline: "Cape Town, Johannesburg & dynamic regions",
     tours: "8 tours",
     image: images.home.destinations.southAfrica,
+  },
+];
+
+export const operatingHubs = [
+  {
+    name: "Ghana",
+    filterId: "ghana",
+    region: "West Africa",
+    tagline: "Heritage Coast",
+    desc: "Cape Coast Castle, Kumasi, Accra — immerse in the history and spirit of West Africa.",
+    image: images.home.ghana,
+    badge: "bg-brand-gold/20 text-brand-gold",
+  },
+  {
+    name: "Kenya",
+    filterId: "kenya",
+    region: "East Africa",
+    tagline: "Safari & Savanna",
+    desc: "Maasai Mara wildlife, cultural encounters, and breathtaking landscapes across East Africa.",
+    image: images.home.kenya,
+    badge: "bg-brand-orange/15 text-brand-orange",
+  },
+  {
+    name: "South Africa",
+    filterId: "southafrica",
+    region: "Southern Africa",
+    tagline: "Vibrant Cities",
+    desc: "Table Mountain, Johannesburg townships, and Cape Town's vibrant urban culture.",
+    image: images.home.southAfrica,
+    badge: "bg-brand-green/15 text-brand-green",
   },
 ];
 

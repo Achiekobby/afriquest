@@ -3,6 +3,9 @@ export const ROUTES = {
   about: "/about",
   experiences: "/experiences",
   tours: "/tours",
+  toursWithCountry: (countryId) =>
+    countryId && countryId !== "all" ? `/tours?country=${countryId}` : "/tours",
+  tourBook: (slug) => `/tours/${slug}/book`,
   tourDetail: (slug) => `/tours/${slug}`,
   whyUs: "/why-us",
   stories: "/stories",
@@ -14,4 +17,13 @@ export const ROUTES = {
   profile: "/profile",
   myInquiries: "/my-inquiries",
   myBookings: "/my-bookings",
+  unauthorized: "/unauthorized",
+  operator: {
+    dashboard: "/operator/dashboard",
+    tours: "/operator/tours",
+    tourNew: "/operator/tours/new",
+    tourEdit: (id) => `/operator/tours/${id}/edit`,
+    bookings: "/operator/bookings",
+    profile: "/operator/profile",
+  },
 };

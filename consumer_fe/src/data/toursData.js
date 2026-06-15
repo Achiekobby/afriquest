@@ -13,6 +13,36 @@ export const FILTER_CATEGORIES = [
   { id: "group",       label: "Groups",       icon: "👥" },
 ];
 
+export const COUNTRY_FILTER_IDS = ["ghana", "kenya", "southafrica"];
+
+/** Countries with published tour listings — expand as hubs go live */
+export const LIVE_TOUR_COUNTRIES = ["Ghana"];
+
+export const COUNTRY_FILTER_META = {
+  kenya: {
+    name: "Kenya",
+    icon: "🇰🇪",
+    tagline: "Safari & savanna experiences are on the way",
+    description:
+      "We're building curated Kenya itineraries with Maasai Mara wildlife, cultural encounters, and breathtaking landscapes. In the meantime, explore our live Ghana programs.",
+  },
+  southafrica: {
+    name: "South Africa",
+    icon: "🇿🇦",
+    tagline: "Vibrant city & coastal tours coming soon",
+    description:
+      "Cape Town, Johannesburg, and beyond — our South Africa hub is in development. Browse available Ghana heritage and cultural tours while we prepare this region.",
+  },
+};
+
+export function isCountryFilter(id) {
+  return COUNTRY_FILTER_IDS.includes(id);
+}
+
+export function isLiveCountryFilter(id) {
+  return id === "ghana";
+}
+
 // Rotate between the two available local variants per country
 const gh1 = images.home.destinations.ghana;
 const gh2 = images.home.ghana;
@@ -347,6 +377,8 @@ export const allTours = [
     spotsLeft: 8,
   },
 ];
+
+export const liveTours = allTours.filter((tour) => LIVE_TOUR_COUNTRIES.includes(tour.country));
 
 const COUNTRY_GALLERY = {
   Ghana: [gh1, gh2, hero, tst],

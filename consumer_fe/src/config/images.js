@@ -8,9 +8,13 @@ export const images = {
   favicon_logo: "/images/favicon_logo.png",
   home: {
     hero: "/images/home/hero.jpg",
-    ghana: "/images/home/ghana.jpg",
-    kenya: "/images/home/kenya.jpg",
-    southAfrica: "/images/home/south-africa.jpg",
+    hero_one: "/images/home/hero_one.jpg",
+    hero_two: "/images/home/hero_two.jpg",
+    hero_three: "/images/home/hero_three.jpg",
+    hero_four: "/images/home/hero_four.png",
+    ghana: "/images/home/ghana_tour.jpg",
+    kenya: "/images/home/kenyan_tour.jpg",
+    southAfrica: "/images/home/sa_tour.jpg",
     testimonial: "/images/home/testimonial.jpg",
     destinations: {
       ghana: "/images/home/dest-ghana.jpg",
