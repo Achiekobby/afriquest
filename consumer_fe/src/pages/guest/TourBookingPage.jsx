@@ -347,7 +347,7 @@ export default function TourBookingPage() {
     update("travelers", clampGroupTravelers(form.travelers + delta));
   }
 
-  function buildBookingData(ref, overrides = {}) {
+  const buildBookingData = useCallback((ref, overrides = {}) => {
     return {
       bookingRef: ref,
       bookingType: form.bookingType,
@@ -387,14 +387,14 @@ export default function TourBookingPage() {
       issuedAt: new Date().toISOString(),
       ...overrides,
     };
-  }
+  }, [form, tour, subtotal]);
 
   const completeBooking = useCallback((ref) => {
     const data = buildBookingData(ref);
     saveBooking(data);
     downloadBookingReceipt(data);
     navigate(`${ROUTES.myBookings}?booked=${ref}`, { replace: true });
-  }, [navigate, form, tour, subtotal]);
+  }, [buildBookingData, navigate]);
 
   useEffect(() => {
     if (step !== "payment-processing") return undefined;
