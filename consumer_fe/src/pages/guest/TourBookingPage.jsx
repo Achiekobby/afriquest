@@ -254,22 +254,6 @@ export default function TourBookingPage() {
     formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [step]);
 
-  useEffect(() => {
-    if (step !== "payment-processing") return undefined;
-
-    if (paymentLoadStep >= PAYMENT_LOADING_STEPS.length) {
-      if (paymentCompleteRef.current) return undefined;
-      paymentCompleteRef.current = true;
-      const ref = pendingBookingRef.current;
-      if (ref) completeBooking(ref);
-      return undefined;
-    }
-
-    const delay = paymentLoadStep === 0 ? 700 : paymentLoadStep === PAYMENT_LOADING_STEPS.length - 1 ? 1100 : 900;
-    const timer = window.setTimeout(() => setPaymentLoadStep((s) => s + 1), delay);
-    return () => window.clearTimeout(timer);
-  }, [step, paymentLoadStep]);
-
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -405,12 +389,28 @@ export default function TourBookingPage() {
     };
   }
 
-  function completeBooking(ref) {
+  const completeBooking = useCallback((ref) => {
     const data = buildBookingData(ref);
     saveBooking(data);
     downloadBookingReceipt(data);
     navigate(`${ROUTES.myBookings}?booked=${ref}`, { replace: true });
-  }
+  }, [navigate, form, tour, subtotal]);
+
+  useEffect(() => {
+    if (step !== "payment-processing") return undefined;
+
+    if (paymentLoadStep >= PAYMENT_LOADING_STEPS.length) {
+      if (paymentCompleteRef.current) return undefined;
+      paymentCompleteRef.current = true;
+      const ref = pendingBookingRef.current;
+      if (ref) completeBooking(ref);
+      return undefined;
+    }
+
+    const delay = paymentLoadStep === 0 ? 700 : paymentLoadStep === PAYMENT_LOADING_STEPS.length - 1 ? 1100 : 900;
+    const timer = window.setTimeout(() => setPaymentLoadStep((s) => s + 1), delay);
+    return () => window.clearTimeout(timer);
+  }, [step, paymentLoadStep, completeBooking]);
 
   function handleInfoNext(e) {
     e.preventDefault();

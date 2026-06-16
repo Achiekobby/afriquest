@@ -1,3 +1,4 @@
+import { buildGhanaLocationLabel } from "../data/ghanaRegions";
 import { getImagePreviewSrc, MAX_FEATURE_IMAGES, normalizeTourImages, toApiImagePayload } from "./tourImageUtils";
 
 const STORAGE_KEY = "afriqwest_operator_tours";
@@ -27,7 +28,26 @@ export function getOperatorTourById(id) {
 }
 
 export function normalizeTourListing(tour) {
-  return normalizeTourImages(tour);
+  const normalized = normalizeTourImages(tour);
+  const isGhana = normalized.countryCode === "ghana";
+
+  if (isGhana && normalized.region) {
+    const derivedLocation = buildGhanaLocationLabel(normalized);
+    if (derivedLocation) {
+      normalized.location = derivedLocation;
+    }
+  }
+
+  return {
+    ...normalized,
+    region: normalized.region || "",
+    city: normalized.city || "",
+    cityIsCustom: Boolean(normalized.cityIsCustom),
+    customCity: normalized.customCity || "",
+    shortDescription: normalized.shortDescription || "",
+    totalSlots: normalized.slotsInfinite ? null : Number(normalized.totalSlots) || 18,
+    slotsInfinite: Boolean(normalized.slotsInfinite),
+  };
 }
 
 export function buildTourApiPayload(tour) {
@@ -75,12 +95,12 @@ export function deleteOperatorTour(id) {
 }
 
 export const TOUR_CATEGORY_OPTIONS = [
-  { id: "heritage", label: "Heritage" },
-  { id: "cultural", label: "Cultural" },
-  { id: "safari", label: "Safari" },
-  { id: "adventure", label: "Adventure" },
-  { id: "beach", label: "Beach" },
-  { id: "group", label: "Groups" },
+  { id: "heritage", label: "Heritage", description: "Historic sites, monuments, and UNESCO landmarks." },
+  { id: "cultural", label: "Cultural", description: "Festivals, crafts, cuisine, and living traditions." },
+  { id: "safari", label: "Safari", description: "Wildlife parks, game drives, and nature reserves." },
+  { id: "adventure", label: "Adventure", description: "Hiking, canopy walks, and active exploration." },
+  { id: "beach", label: "Beach", description: "Coastal escapes, resorts, and water activities." },
+  { id: "group", label: "Groups", description: "Shared departures ideal for families and teams." },
 ];
 
 export const COUNTRY_OPTIONS = [
@@ -99,6 +119,13 @@ export function createEmptyTourListing() {
   return {
     name: "",
     location: "",
+    region: "",
+    city: "",
+    cityIsCustom: false,
+    customCity: "",
+    shortDescription: "",
+    totalSlots: 18,
+    slotsInfinite: false,
     country: "Ghana",
     countryCode: "ghana",
     categories: ["ghana", "heritage", "cultural"],

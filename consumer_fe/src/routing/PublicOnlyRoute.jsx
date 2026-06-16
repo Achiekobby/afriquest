@@ -1,6 +1,5 @@
 import { Navigate, Outlet } from "react-router";
 import { resolvePostAuthRedirect } from "../constants/roles";
-import { ROUTES } from "../constants/routes";
 import { useAuth } from "../hooks/useAuth";
 
 /**
