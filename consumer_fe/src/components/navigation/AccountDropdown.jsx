@@ -2,16 +2,31 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronDown, LayoutDashboard, LogOut, Luggage, User } from "lucide-react";
+import { ADMIN_PERMISSIONS } from "../../constants/adminPermissions";
 import { ROUTES } from "../../constants/routes";
+import { USER_ROLES } from "../../constants/roles";
 import { useAuth } from "../../hooks/useAuth";
 
 const EASE = [0.16, 1, 0.3, 1];
 
-const menuItems = [
-  { to: ROUTES.dashboard, label: "Dashboard", icon: LayoutDashboard },
-  { to: ROUTES.myBookings, label: "My bookings", icon: Luggage },
-  { to: ROUTES.profile, label: "Profile", icon: User },
-];
+function getMenuItems(role, user, hasAdminPermission) {
+  if (role === USER_ROLES.ADMINISTRATOR) {
+    const items = [{ to: ROUTES.admin.dashboard, label: "Dashboard", icon: LayoutDashboard }];
+
+    if (hasAdminPermission(ADMIN_PERMISSIONS.BOOKING_MANAGEMENT)) {
+      items.push({ to: ROUTES.admin.bookings, label: "Bookings", icon: Luggage });
+    }
+
+    items.push({ to: ROUTES.admin.profile, label: "Profile", icon: User });
+    return items;
+  }
+
+  return [
+    { to: ROUTES.dashboard, label: "Dashboard", icon: LayoutDashboard },
+    { to: ROUTES.myBookings, label: "My bookings", icon: Luggage },
+    { to: ROUTES.profile, label: "Profile", icon: User },
+  ];
+}
 
 function getInitials(user) {
   const first = user?.firstName?.[0] || user?.name?.[0] || "";
@@ -25,7 +40,8 @@ function getDisplayName(user) {
 }
 
 export function AccountMenuLinks({ onNavigate, className = "" }) {
-  const { logout } = useAuth();
+  const { logout, role, user, hasAdminPermission } = useAuth();
+  const menuItems = getMenuItems(role, user, hasAdminPermission);
 
   return (
     <div className={className}>
@@ -149,8 +165,12 @@ export function AccountMobileSection({ onNavigate }) {
   return (
     <div className="rounded-2xl border border-brand-border/50 bg-brand-cream/50 p-4">
       <div className="mb-3 flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-green text-sm font-bold text-white">
-          {getInitials(user)}
+        <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-brand-green text-sm font-bold text-white">
+          {user?.profileImage ? (
+            <img src={user.profileImage} alt="" className="h-full w-full object-cover" />
+          ) : (
+            getInitials(user)
+          )}
         </span>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-brand-ink">{displayName}</p>

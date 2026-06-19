@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router";
 import { ROUTES } from "./constants/routes";
+import adminRoutes from "./routing/AdminRoutes";
 import authRoutes from "./routing/AuthRoutes";
 import guestRoutes from "./routing/GuestRoutes";
 import operatorRoutes from "./routing/OperatorRoutes";
@@ -10,6 +11,7 @@ function App() {
     <>
       <Toastr />
       <Routes>
+        {adminRoutes}
         {guestRoutes}
         {authRoutes}
         {operatorRoutes}

@@ -3,12 +3,12 @@ import { ROUTES } from "../constants/routes";
 import { getHomeRouteForRole } from "../constants/roles";
 import { useAuth } from "../hooks/useAuth";
 
-export default function RoleRoute({ allowedRoles }) {
+export default function RoleRoute({ allowedRoles, loginPath = ROUTES.login }) {
   const { isAuthenticated, user } = useAuth();
   const location = useLocation();
 
   if (!isAuthenticated) {
-    return <Navigate to={ROUTES.login} replace state={{ from: location }} />;
+    return <Navigate to={loginPath} replace state={{ from: location }} />;
   }
 
   if (!allowedRoles.includes(user?.role)) {

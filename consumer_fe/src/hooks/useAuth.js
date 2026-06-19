@@ -11,10 +11,12 @@ import {
   setCredentials,
 } from "../features/auth/authSlice";
 import { ROUTES } from "../constants/routes";
-import { getHomeRouteForRole, isOperatorRole, isTouristRole } from "../constants/roles";
+import { getHomeRouteForRole, isAdminRole, isOperatorRole, isTouristRole } from "../constants/roles";
+import { hasAdminPermission as checkAdminPermission } from "../constants/adminPermissions";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { persistor } from "../store";
 import { clearLegacyAuth } from "../store/legacyAuthMigration";
+import adminAuthServiceApi from "../apis/AdminAuthServiceApi";
 
 export function useAuth() {
   const dispatch = useAppDispatch();
@@ -34,6 +36,17 @@ export function useAuth() {
   );
 
   const logout = useCallback(async () => {
+    const wasAdmin = isAdminRole(role);
+    const currentToken = token;
+
+    if (wasAdmin && currentToken) {
+      try {
+        await adminAuthServiceApi.logout(currentToken);
+      } catch {
+        // Local session is still cleared if the API call fails.
+      }
+    }
+
     dispatch(clearCredentials());
     clearLegacyAuth();
     queryClient.clear();
@@ -44,8 +57,8 @@ export function useAuth() {
       // Persist flush is best-effort; in-memory state is already cleared.
     }
 
-    navigate(ROUTES.home, { replace: true });
-  }, [dispatch, navigate, queryClient]);
+    navigate(wasAdmin ? ROUTES.admin.login : ROUTES.home, { replace: true });
+  }, [dispatch, navigate, queryClient, role, token]);
 
   return {
     user,
@@ -55,6 +68,8 @@ export function useAuth() {
     isVerified,
     isTourist: isTouristRole(role),
     isOperator: isOperatorRole(role),
+    isAdmin: isAdminRole(role),
+    hasAdminPermission: (permission) => checkAdminPermission(user, permission),
     homeRoute: getHomeRouteForRole(role),
     login,
     logout,

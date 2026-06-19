@@ -9,6 +9,7 @@ import {
   Luggage,
   Map,
   MessageCircle,
+  ShieldCheck,
   User,
 } from "lucide-react";
 
@@ -23,6 +24,7 @@ const ICON_MAP = {
   lock: Lock,
   grid: LayoutGrid,
   calendar: Calendar,
+  shield: ShieldCheck,
   user: User,
 };
 
@@ -33,6 +35,6 @@ export default function AppIcon({ name, className = "h-5 w-5", strokeWidth = 1.7
 }
 
 export function RoleIcon({ role, className = "h-6 w-6 text-brand-green" }) {
-  const name = role === "site_operator" ? "landmark" : "luggage";
+  const name = role === "administrator" ? "shield" : role === "site_operator" ? "landmark" : "luggage";
   return <AppIcon name={name} className={className} strokeWidth={1.75} />;
 }
