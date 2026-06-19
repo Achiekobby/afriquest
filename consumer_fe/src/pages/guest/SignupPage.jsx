@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
+import { toast } from "react-toastify";
+import { Camera } from "lucide-react";
 import { ROUTES } from "../../constants/routes";
 import { resolvePostAuthRedirect, ROLE_META, USER_ROLES } from "../../constants/roles";
 import { useAuth } from "../../hooks/useAuth";
@@ -8,6 +10,9 @@ import { images } from "../../config/images";
 import OtpInput from "../../components/misc/OtpInput";
 import AccountTypePicker from "../../components/auth/AccountTypePicker";
 import AppIcon from "../../components/icons/AppIcon";
+import consumerAuthServiceApi from "../../apis/ConsumerAuthServiceApi";
+import { normalizePhoneForApi } from "../../utils/phoneUtils";
+import { getImagePreviewSrc, readImageFile } from "../../utils/tourImageUtils";
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -46,6 +51,10 @@ export default function SignupPage() {
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [otpError, setOtpError] = useState("");
+  const [profilePreview, setProfilePreview] = useState("");
+  const [profileImage, setProfileImage] = useState("");
+  const [profileError, setProfileError] = useState("");
+  const profileInputRef = useRef(null);
   const panelRef = useRef(null);
 
   useEffect(() => {
@@ -94,7 +103,34 @@ export default function SignupPage() {
     }
   }
 
-  function handleSendOtp(e) {
+  async function handleProfileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      setProfileError("Profile photo must be under 2 MB.");
+      return;
+    }
+
+    try {
+      const image = await readImageFile(file);
+      const dataUri = getImagePreviewSrc(image);
+      setProfilePreview(dataUri);
+      setProfileImage(dataUri);
+      setProfileError("");
+    } catch (err) {
+      setProfileError(err.message || "Could not read image.");
+    }
+  }
+
+  function clearProfilePhoto() {
+    setProfilePreview("");
+    setProfileImage("");
+    setProfileError("");
+    if (profileInputRef.current) profileInputRef.current.value = "";
+  }
+
+  async function handleSendOtp(e) {
     e.preventDefault();
     const allFields = ["firstName", "lastName", "email", "location", "phone"];
     if (role === USER_ROLES.SITE_OPERATOR) allFields.push("organization");
@@ -103,8 +139,47 @@ export default function SignupPage() {
     setTouched(allTouched);
     setErrors(allErrors);
     if (allFields.some((f) => allErrors[f])) return;
+
     setLoading(true);
-    setTimeout(() => { setLoading(false); setStep("otp"); }, 900);
+
+    if (role === USER_ROLES.TOURIST) {
+      const payload = {
+        first_name: fields.firstName.trim(),
+        last_name: fields.lastName.trim(),
+        email: fields.email.trim(),
+        phone_number: normalizePhoneForApi(fields.phone),
+        location: fields.location.trim(),
+      };
+
+      if (profileImage) {
+        payload.profile_image = profileImage;
+      }
+
+      const result = await consumerAuthServiceApi.registerConsumer(payload);
+      setLoading(false);
+
+      if (!result.ok) {
+        toast.error(result.reason || result.message);
+        return;
+      }
+
+      toast.success(result.reason || "Check your email for the verification code.");
+      navigate(ROUTES.verify, {
+        replace: true,
+        state: {
+          emailOrPhone: fields.email.trim(),
+          verifyType: "registration",
+          reason: result.reason || "OTP sent to your email successfully.",
+        },
+      });
+      return;
+    }
+
+    // Operator — mock until API is wired
+    window.setTimeout(() => {
+      setLoading(false);
+      setStep("otp");
+    }, 900);
   }
 
   function handleOtpChange(val) {
@@ -136,11 +211,17 @@ export default function SignupPage() {
   }
 
   const roleMeta = ROLE_META[role];
-  const signupSteps = [
-    { id: "role", label: "Account type" },
-    { id: "details", label: "Your details" },
-    { id: "otp", label: "Verify OTP" },
-  ];
+  const signupSteps =
+    role === USER_ROLES.TOURIST
+      ? [
+          { id: "role", label: "Account type" },
+          { id: "details", label: "Your details" },
+        ]
+      : [
+          { id: "role", label: "Account type" },
+          { id: "details", label: "Your details" },
+          { id: "otp", label: "Verify OTP" },
+        ];
   const stepIndex = signupSteps.findIndex((s) => s.id === step);
 
   // Shared input class builder
@@ -357,10 +438,47 @@ export default function SignupPage() {
                 <p className="mt-2 text-sm leading-relaxed text-brand-muted">
                   {role === USER_ROLES.SITE_OPERATOR
                     ? "Tell us about you and your tourist site. We'll verify your phone with a one-time code."
-                    : "Register with your details. We'll verify your phone with a one-time code."}
+                    : "Register with your details. We'll email you a one-time code to verify your account."}
                 </p>
 
                 <form onSubmit={handleSendOtp} className="mt-8 space-y-4">
+                  {role === USER_ROLES.TOURIST && (
+                    <div className="flex flex-col items-center gap-3 pb-2">
+                      <button
+                        type="button"
+                        onClick={() => profileInputRef.current?.click()}
+                        className="group relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-brand-border bg-white transition-all hover:border-brand-green hover:ring-4 hover:ring-brand-green/10"
+                      >
+                        {profilePreview ? (
+                          <img src={profilePreview} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <Camera className="h-8 w-8 text-brand-muted transition-colors group-hover:text-brand-green" aria-hidden />
+                        )}
+                      </button>
+                      <input
+                        ref={profileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleProfileChange}
+                      />
+                      <div className="text-center">
+                        <p className="text-xs font-semibold text-brand-ink">Profile photo (optional)</p>
+                        {profilePreview ? (
+                          <button
+                            type="button"
+                            onClick={clearProfilePhoto}
+                            className="mt-1 text-[11px] font-medium text-brand-orange hover:underline"
+                          >
+                            Remove photo
+                          </button>
+                        ) : (
+                          <p className="mt-1 text-[11px] text-brand-muted">JPG or PNG, max 2 MB</p>
+                        )}
+                        {profileError ? <p className="mt-1 text-[11px] text-red-500">{profileError}</p> : null}
+                      </div>
+                    </div>
+                  )}
 
                   {/* First + Last name row */}
                   <div className="grid grid-cols-2 gap-3">
@@ -528,7 +646,12 @@ export default function SignupPage() {
                           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" />
                           <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
                         </svg>
-                        Sending code…
+                        {role === USER_ROLES.TOURIST ? "Creating account…" : "Sending code…"}
+                      </>
+                    ) : role === USER_ROLES.TOURIST ? (
+                      <>
+                        Create account
+                        <svg className="h-4 w-4 transition-transform group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>
                       </>
                     ) : (
                       <>
@@ -548,8 +671,8 @@ export default function SignupPage() {
               </motion.div>
             )}
 
-            {/* ── Step 3: OTP ── */}
-            {step === "otp" && (
+            {/* ── Step 3: OTP (operators only) ── */}
+            {step === "otp" && role === USER_ROLES.SITE_OPERATOR && (
               <motion.div key="otp" {...slideIn}>
                 <button
                   type="button"

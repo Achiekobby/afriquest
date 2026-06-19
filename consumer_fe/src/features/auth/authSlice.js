@@ -29,6 +29,8 @@ export const selectUser = (state) => state.auth.user;
 export const selectToken = (state) => state.auth.token;
 export const selectIsAuthenticated = (state) =>
   Boolean(state.auth.token && state.auth.user);
+export const selectIsVerified = (state) =>
+  state.auth.user?.isVerified !== false;
 export const selectUserRole = (state) =>
   state.auth.user?.role ?? USER_ROLES.TOURIST;
 

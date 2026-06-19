@@ -26,6 +26,13 @@ export function getHomeRouteForRole(role) {
     : ROUTES.dashboard;
 }
 
+/** Public landing after sign-in — travelers return to the marketing home. */
+export function getGuestLandingRoute(role) {
+  return role === USER_ROLES.SITE_OPERATOR
+    ? ROUTES.operator.dashboard
+    : ROUTES.home;
+}
+
 export function isOperatorRole(role) {
   return role === USER_ROLES.SITE_OPERATOR;
 }

@@ -1,12 +1,12 @@
 import { Outlet } from "react-router";
-import TouristNavbar from "../components/navigation/TouristNavbar";
+import AuthNavbar from "../components/navigation/AuthNavbar";
 import ScrollToTop from "../components/misc/ScrollToTop";
 
 export default function AuthLayout() {
   return (
     <div className="flex min-h-screen flex-col bg-brand-cream">
       <ScrollToTop />
-      <TouristNavbar />
+      <AuthNavbar />
       <main className="flex-1">
         <Outlet />
       </main>

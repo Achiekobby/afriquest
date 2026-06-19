@@ -13,6 +13,7 @@ export const ROUTES = {
   contact: "/contact",
   login: "/login",
   signup: "/signup",
+  verify: "/verify",
   dashboard: "/dashboard",
   profile: "/profile",
   myInquiries: "/my-inquiries",

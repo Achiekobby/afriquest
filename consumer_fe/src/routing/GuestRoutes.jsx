@@ -7,6 +7,7 @@ import ExperiencesPage from "../pages/guest/ExperiencesPage";
 import HomePage from "../pages/guest/HomePage";
 import LoginPage from "../pages/guest/LoginPage";
 import SignupPage from "../pages/guest/SignupPage";
+import VerifyAccountPage from "../pages/guest/VerifyAccountPage";
 import StoriesPage from "../pages/guest/StoriesPage";
 import StoryDetailPage from "../pages/guest/StoryDetailPage";
 import MyBookingsPage from "../pages/guest/MyBookingsPage";
@@ -51,6 +52,7 @@ const guestRoutes = (
         <Route path="login" element={<LoginPage />} />
         <Route path="signup" element={<SignupPage />} />
       </Route>
+      <Route path="verify" element={<VerifyAccountPage />} />
     </Route>
   </>
 );

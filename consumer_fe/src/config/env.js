@@ -1,6 +1,6 @@
 const env = {
   appName: process.env.REACT_APP_APP_NAME || "AfriQwest Global",
-  apiUrl: process.env.REACT_APP_API_URL || "http://localhost:8000/api",
+  apiUrl:"https://afriquestgh.omnicarsgh.com/api",
   contactEmail: process.env.REACT_APP_CONTACT_EMAIL || "info@afriqwestglobal.com",
   contactPhoneUs: process.env.REACT_APP_CONTACT_PHONE_US || "+13464331792",
   contactPhoneGh: process.env.REACT_APP_CONTACT_PHONE_GH || "+233240000000",
