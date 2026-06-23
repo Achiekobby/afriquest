@@ -41,6 +41,7 @@ export function getFooterAccountLinks({ isAuthenticated, role, hasAdminPermissio
       { label: "Dashboard", to: ROUTES.operator.dashboard },
       { label: "My listings", to: ROUTES.operator.tours },
       { label: "Bookings", to: ROUTES.operator.bookings },
+      { label: "Payments", to: ROUTES.operator.payments },
       { label: "Profile", to: ROUTES.operator.profile },
     ];
   }

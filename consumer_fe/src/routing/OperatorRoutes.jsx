@@ -2,6 +2,8 @@ import { Route } from "react-router";
 import OperatorLayout from "../layouts/OperatorLayout";
 import OperatorBookingsPage from "../pages/operator/OperatorBookingsPage";
 import OperatorDashboardPage from "../pages/operator/OperatorDashboardPage";
+import OperatorPaymentsPage from "../pages/operator/OperatorPaymentsPage";
+import OperatorPaymentDetailPage from "../pages/operator/OperatorPaymentDetailPage";
 import OperatorProfilePage from "../pages/operator/OperatorProfilePage";
 import OperatorTourDetailPage from "../pages/operator/OperatorTourDetailPage";
 import OperatorTourFormPage from "../pages/operator/OperatorTourFormPage";
@@ -20,6 +22,8 @@ const operatorRoutes = (
         <Route path="tours/:slug/edit" element={<OperatorTourFormPage />} />
         <Route path="tours/:slug" element={<OperatorTourDetailPage />} />
         <Route path="bookings" element={<OperatorBookingsPage />} />
+        <Route path="payments" element={<OperatorPaymentsPage />} />
+        <Route path="payments/:paymentSlug" element={<OperatorPaymentDetailPage />} />
         <Route path="profile" element={<OperatorProfilePage />} />
       </Route>
     </Route>

@@ -15,6 +15,7 @@ function getMenuItems(role, user, hasAdminPermission) {
       { to: ROUTES.operator.dashboard, label: "Dashboard", icon: LayoutDashboard },
       { to: ROUTES.operator.tours, label: "My listings", icon: Map },
       { to: ROUTES.operator.bookings, label: "Bookings", icon: CalendarCheck },
+      { to: ROUTES.operator.payments, label: "Payments", icon: CreditCard },
       { to: ROUTES.operator.profile, label: "Profile", icon: User },
     ];
   }

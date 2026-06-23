@@ -5,6 +5,7 @@ import {
   BarChart3,
   CalendarCheck,
   ChevronLeft,
+  CreditCard,
   ExternalLink,
   Landmark,
   LogOut,
@@ -25,7 +26,10 @@ const EASE = [0.22, 1, 0.36, 1];
 const NAV_ITEMS = {
   overview: [{ to: ROUTES.operator.dashboard, label: "Dashboard", icon: BarChart3, end: true }],
   listings: [{ to: ROUTES.operator.tours, label: "Tour listings", icon: Map }],
-  operations: [{ to: ROUTES.operator.bookings, label: "Bookings", icon: CalendarCheck }],
+  operations: [
+    { to: ROUTES.operator.bookings, label: "Bookings", icon: CalendarCheck },
+    { to: ROUTES.operator.payments, label: "Payments", icon: CreditCard },
+  ],
   account: [{ to: ROUTES.operator.profile, label: "Profile", icon: UserCircle }],
 };
 

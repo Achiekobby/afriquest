@@ -9,7 +9,7 @@ export function mapApiPayment(data) {
     reference: data.reference || "",
     amount: Number(data.amount) || 0,
     currency: data.currency || "GHS",
-    status: data.status || "pending",
+    paymentMethod: data.paymentMethod || data.booking?.paymentMode || "online",
     paymentUrl: data.paymentUrl || null,
     paidAt: data.paidAt || null,
     createdAt: data.createdAt,

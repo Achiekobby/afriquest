@@ -65,6 +65,8 @@ export const ROUTES = {
     tourDetail: (slug) => `/operator/tours/${slug}`,
     tourEdit: (slug) => `/operator/tours/${slug}/edit`,
     bookings: "/operator/bookings",
+    payments: "/operator/payments",
+    paymentDetail: (paymentSlug) => `/operator/payments/${paymentSlug}`,
     profile: "/operator/profile",
   },
 };
