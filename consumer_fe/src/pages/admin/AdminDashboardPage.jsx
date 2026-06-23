@@ -114,14 +114,13 @@ export default function AdminDashboardPage() {
     };
   }, []);
 
-  const bookings = [];
-
+  const allBookings = useMemo(() => [], []);
+  const bookings = allBookings;
+  const bookingsPagination = useLocalAdminPagination(allBookings);
   const permissions = user?.permissions ?? [];
   const permNames = permissions.map((p) => p.name);
   const publishedTours = tours.filter((t) => t.status === "published").length;
   const bookingHealth = countBookingsByHealthCategory(bookings);
-  const allBookings = useMemo(() => [...bookings].reverse(), [bookings]);
-  const bookingsPagination = useLocalAdminPagination(allBookings);
 
   return (
     <div className="space-y-8">

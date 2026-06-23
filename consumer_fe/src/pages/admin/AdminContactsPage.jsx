@@ -141,7 +141,7 @@ export default function AdminContactsPage() {
     if (shouldRefetch) return;
 
     setContacts(items);
-  }, [token, pagination.page, pagination.pageSize, pagination.syncFromResponse, debouncedSearch]);
+  }, [token, pagination, debouncedSearch]);
 
   useEffect(() => {
     loadContacts();

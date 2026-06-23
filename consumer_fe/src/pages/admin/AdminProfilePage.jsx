@@ -79,7 +79,7 @@ export default function AdminProfilePage() {
     setProfileImage(null);
     setImageRemoved(false);
     setErrors({});
-  }, [user?.id, user?.firstName, user?.lastName, user?.email, user?.profileImage]);
+  }, [user]);
 
   const handleFieldChange = useCallback((field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));

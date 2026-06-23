@@ -14,6 +14,7 @@ import { GHANA_CITY_SUGGESTIONS } from "../../utils/operatorTourMapper";
 const EASE = [0.16, 1, 0.3, 1];
 
 const QUICK_PICKS = ["Accra", "Cape Coast", "Kumasi", "Tamale", "Takoradi", "Elmina"];
+const EMPTY_LOCATIONS = [];
 
 function normalizeCity(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -34,16 +35,17 @@ export default function TourLocationRoutePicker({ value = [], onChange, countryI
   const [overIndex, setOverIndex] = useState(null);
   const inputRef = useRef(null);
 
-  const locations = Array.isArray(value) ? value : [];
+  const locations = Array.isArray(value) ? value : EMPTY_LOCATIONS;
   const suggestions = useMemo(() => {
+    const routeLocations = Array.isArray(value) ? value : EMPTY_LOCATIONS;
     const q = query.trim().toLowerCase();
     const pool = countryId === "ghana" ? GHANA_CITY_SUGGESTIONS : [];
     if (!q) return pool.slice(0, 8);
     return pool
       .filter((city) => city.toLowerCase().includes(q))
-      .filter((city) => !locations.some((l) => l.toLowerCase() === city.toLowerCase()))
+      .filter((city) => !routeLocations.some((l) => l.toLowerCase() === city.toLowerCase()))
       .slice(0, 8);
-  }, [query, locations, countryId]);
+  }, [query, value, countryId]);
 
   function addCity(city) {
     const next = normalizeCity(city);

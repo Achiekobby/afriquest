@@ -16,6 +16,7 @@ import { isUpcoming } from "../../utils/bookingStorage";
 import { mapServerPagination } from "../../utils/adminPaginationHelpers";
 
 const EASE = [0.16, 1, 0.3, 1];
+const EMPTY_BOOKINGS = [];
 
 const FILTERS = [
   { id: "all", label: "All bookings" },
@@ -210,7 +211,7 @@ export default function MyBookingsPage() {
     refetch,
   } = useClientBookings(token, { page, per_page: 15 });
 
-  const bookings = data?.items ?? [];
+  const bookings = data?.items ?? EMPTY_BOOKINGS;
   const pagination = data?.pagination ?? null;
   const loading = isFetching;
   const error = bookingsError?.message ?? "";

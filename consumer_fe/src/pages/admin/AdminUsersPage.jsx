@@ -73,7 +73,7 @@ export default function AdminUsersPage() {
     if (shouldRefetch) return;
 
     setAdmins(items);
-  }, [token, pagination.page, pagination.pageSize, pagination.syncFromResponse, debouncedSearch]);
+  }, [token, pagination, debouncedSearch]);
 
   useEffect(() => {
     loadAdmins();

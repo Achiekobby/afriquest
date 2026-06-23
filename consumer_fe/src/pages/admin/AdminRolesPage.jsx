@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "motion/react";
 import {
-  BookOpen,
   Check,
   KeyRound,
   Loader2,
@@ -89,7 +88,7 @@ function PermissionsPanel({ token }) {
     if (shouldRefetch) return;
 
     setPermissions(items);
-  }, [token, pagination.page, pagination.pageSize, pagination.syncFromResponse]);
+  }, [token, pagination]);
 
   useEffect(() => {
     loadPermissions();
@@ -406,7 +405,7 @@ function RolesPanel({ token }) {
     if (shouldRefetch) return;
 
     setRoles(items);
-  }, [token, pagination.page, pagination.pageSize, pagination.syncFromResponse]);
+  }, [token, pagination]);
 
   useEffect(() => {
     loadPermissionsForModal();
