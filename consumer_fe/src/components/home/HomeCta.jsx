@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import Container from "../layout/Container";
 import env, { getWhatsAppUrl } from "../../config/env";
 import { ROUTES } from "../../constants/routes";
+import { NAV_FEATURES } from "../navigation/navConfig";
 import { brand } from "../../data/brandContent";
 
 const EASE = [0.16, 1, 0.3, 1];
@@ -73,12 +74,21 @@ export default function HomeCta() {
                   <path d="M5 12h14M13 6l6 6-6 6" />
                 </svg>
               </Link>
-              <Link
-                to={ROUTES.stories}
-                className="inline-flex w-full min-w-[11rem] items-center justify-center gap-2 rounded-xl border border-white/30 bg-white/10 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition-all duration-300 hover:bg-white/20 sm:w-auto"
-              >
-                Read our stories
-              </Link>
+              {NAV_FEATURES.stories ? (
+                <Link
+                  to={ROUTES.stories}
+                  className="inline-flex w-full min-w-[11rem] items-center justify-center gap-2 rounded-xl border border-white/30 bg-white/10 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition-all duration-300 hover:bg-white/20 sm:w-auto"
+                >
+                  Read our stories
+                </Link>
+              ) : (
+                <Link
+                  to={ROUTES.tours}
+                  className="inline-flex w-full min-w-[11rem] items-center justify-center gap-2 rounded-xl border border-white/30 bg-white/10 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition-all duration-300 hover:bg-white/20 sm:w-auto"
+                >
+                  Browse tours
+                </Link>
+              )}
               <a
                 href={getWhatsAppUrl("Hello AfriQwest, I would like to plan a trip to Ghana, Kenya, or South Africa.")}
                 target="_blank"

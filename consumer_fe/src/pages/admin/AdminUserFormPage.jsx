@@ -9,6 +9,7 @@ import AdminConfirmModal from "../../components/admin/AdminConfirmModal";
 import { ROUTES } from "../../constants/routes";
 import { useAuth } from "../../hooks/useAuth";
 import { scrollToFirstFormError, validateAdminUserForm } from "../../utils/adminUserFormValidation";
+import { parsePaginatedList } from "../../utils/adminPaginationHelpers";
 import { normalizePhoneForApi } from "../../utils/phoneUtils";
 
 const EASE = [0.22, 1, 0.36, 1];
@@ -55,12 +56,12 @@ export default function AdminUserFormPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const loadRoles = useCallback(async () => {
-    const result = await adminRolesServiceApi.listRoles(token);
+    const result = await adminRolesServiceApi.listRoles(token, { page: 1, per_page: 100 });
     if (!result.ok) {
       toast.error(result.reason || result.message);
       return;
     }
-    setRoles(Array.isArray(result.data) ? result.data : []);
+    setRoles(parsePaginatedList(result.data).items);
   }, [token]);
 
   const loadAdmin = useCallback(async () => {

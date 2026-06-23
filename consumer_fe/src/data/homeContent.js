@@ -167,7 +167,7 @@ export const topDestinations = [
     region: "Heritage Coast",
     tagline: "Cape Coast Castles, Kumasi & living culture",
     tours: "12 tours",
-    image: images.home.destinations.ghana,
+    image: images.home.ghana,
   },
   {
     slug: "kenya-safari-culture-2025",
@@ -175,7 +175,7 @@ export const topDestinations = [
     region: "Safari & Savanna",
     tagline: "Maasai Mara, wildlife & cultural encounters",
     tours: "9 tours",
-    image: images.home.destinations.kenya,
+    image: images.home.kenya,
   },
   {
     slug: "south-africa-discovery-2025",
@@ -183,20 +183,11 @@ export const topDestinations = [
     region: "Vibrant Cities",
     tagline: "Cape Town, Johannesburg & dynamic regions",
     tours: "8 tours",
-    image: images.home.destinations.southAfrica,
+    image: images.home.southAfrica,
   },
 ];
 
 export const operatingHubs = [
-  {
-    name: "Ghana",
-    filterId: "ghana",
-    region: "West Africa",
-    tagline: "Heritage Coast",
-    desc: "Cape Coast Castle, Kumasi, Accra — immerse in the history and spirit of West Africa.",
-    image: images.home.ghana,
-    badge: "bg-brand-gold/20 text-brand-gold",
-  },
   {
     name: "Kenya",
     filterId: "kenya",
@@ -214,6 +205,45 @@ export const operatingHubs = [
     desc: "Table Mountain, Johannesburg townships, and Cape Town's vibrant urban culture.",
     image: images.home.southAfrica,
     badge: "bg-brand-green/15 text-brand-green",
+  },
+];
+
+export const ghanaPackageHubs = [
+  {
+    packageId: "accra",
+    name: "Accra",
+    region: "Ghana",
+    tagline: "Arts & city culture",
+    desc: "Arts Centre, Aburi crafts markets, and the creative pulse of the capital.",
+    image: images.tour_sites.arts_and_craft,
+    badge: "bg-brand-gold/20 text-brand-gold",
+  },
+  {
+    packageId: "kumasi",
+    name: "Kumasi",
+    region: "Ashanti Region",
+    tagline: "Royal heritage",
+    desc: "Manhyia Palace, kente villages, and the living culture of the Ashanti Kingdom.",
+    image: images.tour_sites.manhyia_palace,
+    badge: "bg-brand-orange/15 text-brand-orange",
+  },
+  {
+    packageId: "volta",
+    name: "Volta",
+    region: "Eastern Ghana",
+    tagline: "Mountains & waterfalls",
+    desc: "Wli Falls, highland treks, and nature-forward journeys in the Volta Region.",
+    image: images.tour_sites.waterfall,
+    badge: "bg-brand-green/15 text-brand-green",
+  },
+  {
+    packageId: "end-of-year",
+    name: "End of Year",
+    region: "Ghana",
+    tagline: "Detty December",
+    desc: "Festival season energy — concerts, Afrochella vibes, and December celebrations.",
+    image: images.tour_sites.detty_december,
+    badge: "bg-brand-orange/20 text-brand-orange",
   },
 ];
 

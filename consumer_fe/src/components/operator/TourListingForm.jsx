@@ -1,24 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Info, X } from "lucide-react";
 import { ROUTES } from "../../constants/routes";
 import TourImageField from "./TourImageField";
+import TourFeatureImagesField from "./TourFeatureImagesField";
+import TourLocationRoutePicker from "./TourLocationRoutePicker";
 import {
   BADGE_VARIANTS,
   COUNTRY_OPTIONS,
+  GHANA_PACKAGE_LINE_OPTIONS,
+  getPackageLinePhotoHints,
+  isGhanaPackageLineId,
   TOUR_CATEGORY_OPTIONS,
-  buildTourApiPayload,
 } from "../../utils/operatorTourStorage";
 import {
-  MAX_FEATURE_IMAGES,
-  MAX_FEATURE_IMAGES_TOTAL_BYTES,
-  defaultFeatureImage,
-  formatBytes,
-  getFeatureImagesTotalBytes,
-  getImagePreviewSrc,
+  TOUR_CURRENCY,
+  TOUR_CURRENCY_OPTIONS,
+  formatTourPriceLabel,
+} from "../../utils/operatorTourConstants";
+import { buildTourPayload, formatDepartureDateLabel, getAllocatedDepartureSlots, getRemainingDepartureSlots, validateTourSlotAllocation } from "../../utils/operatorTourMapper";
+import {
   normalizeTourImages,
-  validateFeatureImageFile,
   validateFeatureImagesCollection,
 } from "../../utils/tourImageUtils";
 
@@ -92,12 +95,14 @@ function ListingStepProgress({ currentIndex }) {
   );
 }
 
-function Field({ label, children, hint }) {
+function Field({ label, children, hint, hintClassName = "" }) {
   return (
     <div>
       <label className={labelClass}>{label}</label>
       <div className="mt-2">{children}</div>
-      {hint ? <p className="mt-1.5 text-[11px] text-brand-muted">{hint}</p> : null}
+      {hint ? (
+        <p className={`mt-1.5 text-[11px] text-brand-muted ${hintClassName}`}>{hint}</p>
+      ) : null}
     </div>
   );
 }
@@ -108,7 +113,7 @@ function updateListItem(list, index, value) {
   return next;
 }
 
-export default function TourListingForm({ initial, onSubmit, submitLabel = "Save listing" }) {
+export default function TourListingForm({ initial, onSubmit, submitLabel = "Save listing", isUpdate = false }) {
   const normalizedInitial = useMemo(() => normalizeTourImages(initial), [initial]);
   const [form, setForm] = useState(normalizedInitial);
   const [stepIndex, setStepIndex] = useState(0);
@@ -119,50 +124,121 @@ export default function TourListingForm({ initial, onSubmit, submitLabel = "Save
   const step = STEPS[stepIndex].id;
   const isLastStep = stepIndex === STEPS.length - 1;
   const nextStep = STEPS[stepIndex + 1];
+  const allocatedSlots = useMemo(
+    () => getAllocatedDepartureSlots(form.departureDates),
+    [form.departureDates],
+  );
+  const totalTourSlots = Math.max(1, Number(form.totalSlots) || 1);
+  const remainingSlots = Math.max(0, totalTourSlots - allocatedSlots);
+  const allocationPercent = Math.min(100, Math.round((allocatedSlots / totalTourSlots) * 100));
 
   useEffect(() => {
     formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [stepIndex]);
-
-  const featureBytesUsed = getFeatureImagesTotalBytes(form.featureImages || []);
-  const featureCount = (form.featureImages || []).filter((img) => img?.uri || img?.data).length;
 
   function patch(updates) {
     setForm((prev) => ({ ...prev, ...updates }));
   }
 
   function handleNameChange(name) {
+    patch({ name });
+  }
+
+  function handlePriceChange(amount) {
     patch({
-      name,
-      priceLabel: form.priceAmount ? `From $${Number(form.priceAmount).toLocaleString()}` : form.priceLabel,
+      priceAmount: amount,
+      priceCurrency: TOUR_CURRENCY.code,
+      priceLabel: formatTourPriceLabel(amount),
     });
   }
 
-  function handleCountryChange(code) {
-    const country = COUNTRY_OPTIONS.find((c) => c.code === code);
-    if (!country) return;
+  function updateDeparture(index, updates) {
+    const next = [...form.departureDates];
+    next[index] = { ...next[index], ...updates };
+    patch({ departureDates: next });
+  }
+
+  function handleDepartureSpotsTotal(index, spotsTotal) {
+    updateDeparture(index, { spotsTotal: Math.max(1, Number(spotsTotal) || 1) });
+  }
+
+  function handleTotalSlotsChange(value) {
+    const totalSlots = Math.max(1, Number(value) || 1);
+    const updates = { totalSlots };
+    if (form.departureDates.length === 1 && !form.departureDates[0].date) {
+      updates.departureDates = [{ ...form.departureDates[0], spotsTotal: totalSlots }];
+    }
+    patch(updates);
+  }
+
+  function handleAddDeparture() {
+    const remaining = getRemainingDepartureSlots(form.totalSlots, form.departureDates);
+    if (remaining <= 0) {
+      setFormError("All tour slots are allocated. Adjust departure slots or increase total tour slots.");
+      return;
+    }
+    setFormError("");
     patch({
-      countryCode: code,
+      departureDates: [
+        ...form.departureDates,
+        { date: "", dateLabel: "", spotsTotal: remaining, label: "" },
+      ],
+    });
+  }
+
+  function handleCountryChange(countryId) {
+    const country = COUNTRY_OPTIONS.find((c) => c.id === countryId);
+    if (!country) return;
+    const themeCategories = form.categories.filter(
+      (c) => TOUR_CATEGORY_OPTIONS.some((option) => option.id === c),
+    );
+    patch({
+      countryId: country.id,
+      countryCode: country.dialCode,
       country: country.country,
-      categories: [code, ...form.categories.filter((c) => !COUNTRY_OPTIONS.some((o) => o.code === c))],
+      packageLineId: country.id === "ghana" ? form.packageLineId : "",
+      categories: [country.id, ...(country.id === "ghana" && form.packageLineId ? [form.packageLineId] : []), ...themeCategories],
+    });
+  }
+
+  function handlePackageLineChange(packageLineId) {
+    const themeCategories = form.categories.filter(
+      (c) => TOUR_CATEGORY_OPTIONS.some((option) => option.id === c),
+    );
+    patch({
+      packageLineId,
+      categories: [form.countryId, packageLineId, ...themeCategories],
     });
   }
 
   function toggleCategory(id) {
+    if (COUNTRY_OPTIONS.some((option) => option.id === id) || isGhanaPackageLineId(id)) return;
     const has = form.categories.includes(id);
-    patch({
-      categories: has ? form.categories.filter((c) => c !== id) : [...form.categories, id],
-    });
+    const themeCategories = has
+      ? form.categories.filter((c) => c !== id)
+      : [...form.categories, id];
+    const nextCategories = [form.countryId];
+    if (form.countryId === "ghana" && form.packageLineId) {
+      nextCategories.push(form.packageLineId);
+    }
+    nextCategories.push(...themeCategories.filter((c) => TOUR_CATEGORY_OPTIONS.some((option) => option.id === c)));
+    patch({ categories: [...new Set(nextCategories)] });
   }
 
   function validateStep(index) {
     const stepId = STEPS[index]?.id;
     if (stepId === "basics") {
       if (!form.name.trim()) return "Tour name is required before continuing.";
-      if (!form.location.trim()) return "Location is required before continuing.";
+      if (!(form.locations || []).length) return "Add at least one city to your tour route before continuing.";
+      if (form.countryId === "ghana" && !form.packageLineId) {
+        return "Select a Ghana package line (Accra, Kumasi, Volta, or End of Year) before continuing.";
+      }
     }
     if (stepId === "images") {
       return validateFeatureImagesCollection(form.featureImages) || "";
+    }
+    if (stepId === "pricing") {
+      return validateTourSlotAllocation(form);
     }
     return "";
   }
@@ -185,7 +261,7 @@ export default function TourListingForm({ initial, onSubmit, submitLabel = "Save
     goToStep(stepIndex + 1);
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     for (let i = 0; i < STEPS.length; i += 1) {
       const error = validateStep(i);
@@ -198,49 +274,24 @@ export default function TourListingForm({ initial, onSubmit, submitLabel = "Save
 
     setFormError("");
     setSaving(true);
-    const payload = buildTourApiPayload({
+    const payload = buildTourPayload({
       ...form,
       durationLabel: `${form.durationDays} days`,
-      groupSizeLabel: `${form.groupSizeMin}–${form.groupSizeMax} pax`,
-      priceLabel: `From $${Number(form.priceAmount).toLocaleString()}`,
+      priceLabel: formatTourPriceLabel(form.priceAmount),
       highlights: form.highlights.filter(Boolean),
       included: form.included.filter(Boolean),
       notIncluded: form.notIncluded.filter(Boolean),
       featureImages: (form.featureImages || []).filter((img) => img?.uri || img?.data),
       departureDates: form.departureDates.filter((d) => d.date),
-    });
-    onSubmit(payload);
-    setSaving(false);
-  }
+    }, { isUpdate });
 
-  function updateFeatureImage(index, nextImage) {
-    const featureImages = [...(form.featureImages || [])];
-    featureImages[index] = nextImage;
-    patch({ featureImages });
-    setFormError("");
-  }
-
-  function addFeatureImage() {
-    if ((form.featureImages || []).length >= MAX_FEATURE_IMAGES) {
-      setFormError(`You can upload up to ${MAX_FEATURE_IMAGES} feature images.`);
-      return;
+    try {
+      await onSubmit(payload);
+    } finally {
+      setSaving(false);
     }
-    setFormError("");
-    patch({
-      featureImages: [...(form.featureImages || []), defaultFeatureImage(form.featureImages?.length || 0)],
-    });
   }
 
-  function removeFeatureImage(index) {
-    patch({
-      featureImages: (form.featureImages || []).filter((_, i) => i !== index),
-    });
-    setFormError("");
-  }
-
-  function validateFeatureUpload(file, replaceIndex) {
-    return validateFeatureImageFile(file, form.featureImages || [], replaceIndex);
-  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -258,13 +309,18 @@ export default function TourListingForm({ initial, onSubmit, submitLabel = "Save
           <Field label="Tour name" hint="Displayed on cards and detail pages. URL slug is generated by the backend.">
             <input className={inputClass} value={form.name} onChange={(e) => handleNameChange(e.target.value)} required placeholder="Ghana Heritage Classic" />
           </Field>
-          <Field label="Location">
-            <input className={inputClass} value={form.location} onChange={(e) => patch({ location: e.target.value })} placeholder="Accra → Cape Coast → Kumasi" />
-          </Field>
+          <div className="sm:col-span-2">
+            <TourLocationRoutePicker
+              value={form.locations || []}
+              onChange={(locations) => patch({ locations })}
+              countryId={form.countryId}
+              error={formError && !(form.locations || []).length ? formError : ""}
+            />
+          </div>
           <Field label="Country">
-            <select className={inputClass} value={form.countryCode} onChange={(e) => handleCountryChange(e.target.value)}>
+            <select className={inputClass} value={form.countryId} onChange={(e) => handleCountryChange(e.target.value)}>
               {COUNTRY_OPTIONS.map((c) => (
-                <option key={c.code} value={c.code}>{c.label}</option>
+                <option key={c.id} value={c.id}>{c.label}</option>
               ))}
             </select>
           </Field>
@@ -278,8 +334,37 @@ export default function TourListingForm({ initial, onSubmit, submitLabel = "Save
               <option value="archived">Archived</option>
             </select>
           </Field>
+          {form.countryId === "ghana" ? (
+            <div className="sm:col-span-2">
+              <p className={labelClass}>Ghana package line</p>
+              <p className="mt-1 text-xs text-brand-muted">Primary product category — used for browsing and photo guidance.</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {GHANA_PACKAGE_LINE_OPTIONS.map((option) => {
+                  const active = form.packageLineId === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => handlePackageLineChange(option.id)}
+                      className={[
+                        "rounded-xl border px-4 py-3 text-left transition-all",
+                        active
+                          ? "border-brand-green bg-brand-green/5 ring-2 ring-brand-green/20"
+                          : "border-brand-border bg-white hover:border-brand-green/30",
+                      ].join(" ")}
+                    >
+                      <span className="text-lg" aria-hidden>{option.icon}</span>
+                      <p className="mt-1 text-sm font-bold text-brand-ink">{option.label}</p>
+                      <p className="mt-0.5 text-xs text-brand-muted">{option.description}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
           <div className="sm:col-span-2">
-            <p className={labelClass}>Categories</p>
+            <p className={labelClass}>Experience themes</p>
+            <p className="mt-1 text-xs text-brand-muted">Optional tags describing the type of experience.</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {TOUR_CATEGORY_OPTIONS.map((cat) => {
                 const active = form.categories.includes(cat.id);
@@ -322,104 +407,42 @@ export default function TourListingForm({ initial, onSubmit, submitLabel = "Save
         <motion.div key="images" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.35, ease: EASE }} className={`${sectionClass} space-y-8`}>
           <div>
             <h2 className="text-xl font-bold text-brand-ink">Images</h2>
-            <p className="mt-1 text-sm text-brand-muted">Cover image plus up to five feature images (10 MB total).</p>
+            <p className="mt-1 text-sm text-brand-muted">Cover image plus up to five gallery photos — select multiple at once.</p>
           </div>
+
+          {form.countryId === "ghana" && form.packageLineId ? (
+            <div className="rounded-xl border border-brand-gold/30 bg-brand-gold/5 p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-orange">Photo guidance</p>
+              <p className="mt-2 text-sm font-semibold text-brand-ink">
+                {GHANA_PACKAGE_LINE_OPTIONS.find((option) => option.id === form.packageLineId)?.label} package
+              </p>
+              {(() => {
+                const hints = getPackageLinePhotoHints(form.packageLineId);
+                if (!hints) return null;
+                return (
+                  <ul className="mt-2 space-y-1.5 text-sm text-brand-muted">
+                    <li><span className="font-semibold text-brand-ink">Cover:</span> {hints.cover}</li>
+                    <li><span className="font-semibold text-brand-ink">Gallery:</span> {hints.gallery}</li>
+                  </ul>
+                );
+              })()}
+            </div>
+          ) : null}
+
           <TourImageField
             label="Cover image"
-            hint="Main listing image. Sent as { uri, data } with base64 in data."
+            hint="Paste a public image URL or upload a file — sent as coverImageUrl in the API payload."
             value={form.coverImage}
             onChange={(coverImage) => patch({ coverImage })}
-            uriPlaceholder="tours/cover.jpg"
+            uriPlaceholder="https://…/cover.jpg"
           />
 
-          <div>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className={labelClass}>Feature images</p>
-                <p className="mt-1 text-[11px] text-brand-muted">
-                  Up to {MAX_FEATURE_IMAGES} images, {formatBytes(MAX_FEATURE_IMAGES_TOTAL_BYTES)} total across all feature uploads.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={addFeatureImage}
-                disabled={(form.featureImages || []).length >= MAX_FEATURE_IMAGES}
-                className="inline-flex items-center gap-2 rounded-xl border border-brand-border px-3 py-2 text-xs font-semibold text-brand-green transition-all hover:bg-brand-cream disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Plus className="h-4 w-4" strokeWidth={2} />
-                Add feature image
-              </button>
-            </div>
-
-            <div className="mb-5 rounded-xl border border-brand-border/60 bg-brand-cream/40 px-4 py-3">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-medium text-brand-ink">
-                <span>{featureCount} / {MAX_FEATURE_IMAGES} images</span>
-                <span>{formatBytes(featureBytesUsed)} / {formatBytes(MAX_FEATURE_IMAGES_TOTAL_BYTES)} used</span>
-              </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
-                <div
-                  className={`h-full rounded-full transition-all ${featureBytesUsed > MAX_FEATURE_IMAGES_TOTAL_BYTES ? "bg-red-500" : "bg-brand-green"}`}
-                  style={{ width: `${Math.min(100, (featureBytesUsed / MAX_FEATURE_IMAGES_TOTAL_BYTES) * 100)}%` }}
-                />
-              </div>
-            </div>
-
-            {(form.featureImages || []).length === 0 ? (
-              <div className="rounded-xl border border-dashed border-brand-border bg-brand-cream/50 px-6 py-10 text-center">
-                <p className="text-sm font-semibold text-brand-ink">No feature images yet</p>
-                <p className="mt-2 text-xs text-brand-muted">Add supporting photos for your listing detail page.</p>
-                <button type="button" onClick={addFeatureImage} className="btn-primary mt-5 inline-flex text-xs">
-                  Add first feature image
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {(form.featureImages || []).map((image, index) => (
-                  <div key={index} className="rounded-xl border border-brand-border/60 bg-brand-cream/30 p-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-brand-ink">Feature image {index + 1}</p>
-                      <button
-                        type="button"
-                        onClick={() => removeFeatureImage(index)}
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-500 hover:underline"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
-                        Remove
-                      </button>
-                    </div>
-                    <TourImageField
-                      label={`Feature ${index + 1}`}
-                      value={image}
-                      onChange={(next) => updateFeatureImage(index, next)}
-                      uriPlaceholder={`feature-${index + 1}.jpg`}
-                      showUriField={false}
-                      beforeUpload={(file) => validateFeatureUpload(file, index)}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {(form.featureImages || []).length > 0 && (
-              <div className="mt-6">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-brand-muted">Feature preview strip</p>
-                <div className="flex gap-3 overflow-x-auto pb-1">
-                  {(form.featureImages || []).map((image, index) => {
-                    const src = getImagePreviewSrc(image);
-                    return (
-                      <div key={index} className="h-20 w-28 shrink-0 overflow-hidden rounded-lg border border-brand-border bg-white">
-                        {src ? (
-                          <img src={src} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full items-center justify-center text-[10px] text-brand-muted">Empty</div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
+          <TourFeatureImagesField
+            coverImage={form.coverImage}
+            value={form.featureImages || []}
+            onChange={(featureImages) => patch({ featureImages })}
+            onError={setFormError}
+          />
         </motion.div>
       )}
 
@@ -436,7 +459,24 @@ export default function TourListingForm({ initial, onSubmit, submitLabel = "Save
             <p className={labelClass}>Highlights</p>
             <div className="mt-2 space-y-2">
               {form.highlights.map((item, i) => (
-                <input key={i} className={inputClass} value={item} onChange={(e) => patch({ highlights: updateListItem(form.highlights, i, e.target.value) })} placeholder={`Highlight ${i + 1}`} />
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    className={inputClass}
+                    value={item}
+                    onChange={(e) => patch({ highlights: updateListItem(form.highlights, i, e.target.value) })}
+                    placeholder={`Highlight ${i + 1}`}
+                  />
+                  {form.highlights.length > 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => patch({ highlights: form.highlights.filter((_, idx) => idx !== i) })}
+                      className="shrink-0 rounded-lg p-2 text-brand-muted transition-colors hover:bg-red-50 hover:text-red-500"
+                      aria-label={`Remove highlight ${i + 1}`}
+                    >
+                      <X className="h-4 w-4" strokeWidth={2} aria-hidden />
+                    </button>
+                  ) : null}
+                </div>
               ))}
               <button type="button" onClick={() => patch({ highlights: [...form.highlights, ""] })} className="text-xs font-semibold text-brand-green hover:underline">+ Add highlight</button>
             </div>
@@ -468,33 +508,64 @@ export default function TourListingForm({ initial, onSubmit, submitLabel = "Save
         <motion.div key="itinerary" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.35, ease: EASE }} className={`${sectionClass} space-y-4`}>
           <div>
             <h2 className="text-xl font-bold text-brand-ink">Itinerary</h2>
-            <p className="mt-1 text-sm text-brand-muted">Day-by-day plan travelers will follow.</p>
+            <p className="mt-1 text-sm text-brand-muted">
+              Build your day-by-day plan. Each entry needs a day number, a short title, and a description of what happens.
+            </p>
           </div>
           {form.itinerary.map((day, i) => (
             <div key={i} className="rounded-xl border border-brand-border/60 bg-brand-cream/50 p-4">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-bold text-brand-ink">Day {day.day}</p>
+                <p className="text-sm font-bold text-brand-ink">Itinerary entry {i + 1}</p>
                 {form.itinerary.length > 1 && (
-                  <button type="button" onClick={() => patch({ itinerary: form.itinerary.filter((_, idx) => idx !== i) })} className="text-xs font-semibold text-red-500 hover:underline">Remove</button>
+                  <button type="button" onClick={() => patch({ itinerary: form.itinerary.filter((_, idx) => idx !== i) })} className="text-xs font-semibold text-red-500 hover:underline">Remove day</button>
                 )}
               </div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <input className={inputClass} value={day.title} onChange={(e) => {
-                  const next = [...form.itinerary];
-                  next[i] = { ...day, title: e.target.value };
-                  patch({ itinerary: next });
-                }} placeholder="Day title" />
-                <input type="number" min={1} className={inputClass} value={day.day} onChange={(e) => {
-                  const next = [...form.itinerary];
-                  next[i] = { ...day, day: Number(e.target.value) };
-                  patch({ itinerary: next });
-                }} />
+              <div className="mt-4 grid gap-4 sm:grid-cols-[9rem_1fr]">
+                <Field
+                  label="Day number"
+                  hint="1 = arrival · 10 = departure"
+                  hintClassName="whitespace-nowrap"
+                >
+                  <input
+                    type="number"
+                    min={1}
+                    className={inputClass}
+                    value={day.day}
+                    onChange={(e) => {
+                      const next = [...form.itinerary];
+                      next[i] = { ...day, day: Number(e.target.value) };
+                      patch({ itinerary: next });
+                    }}
+                    placeholder="1"
+                  />
+                </Field>
+                <Field label="Day title" hint="Short headline shown in the itinerary — e.g. “Welcome to Accra”.">
+                  <input
+                    className={inputClass}
+                    value={day.title}
+                    onChange={(e) => {
+                      const next = [...form.itinerary];
+                      next[i] = { ...day, title: e.target.value };
+                      patch({ itinerary: next });
+                    }}
+                    placeholder="Welcome to Accra"
+                  />
+                </Field>
               </div>
-              <textarea className={`${inputClass} mt-3 min-h-[80px]`} value={day.description} onChange={(e) => {
-                const next = [...form.itinerary];
-                next[i] = { ...day, description: e.target.value };
-                patch({ itinerary: next });
-              }} placeholder="What happens on this day…" />
+              <div className="mt-4">
+                <Field label="Day description" hint="What travelers do this day — activities, meals, transfers, and highlights.">
+                  <textarea
+                    className={`${inputClass} min-h-[100px]`}
+                    value={day.description}
+                    onChange={(e) => {
+                      const next = [...form.itinerary];
+                      next[i] = { ...day, description: e.target.value };
+                      patch({ itinerary: next });
+                    }}
+                    placeholder="Meet your guide, settle in, and enjoy a welcome dinner with a full trip briefing."
+                  />
+                </Field>
+              </div>
             </div>
           ))}
           <button
@@ -508,56 +579,163 @@ export default function TourListingForm({ initial, onSubmit, submitLabel = "Save
       )}
 
       {step === "pricing" && (
-        <motion.div key="pricing" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.35, ease: EASE }} className={`${sectionClass} grid gap-5 sm:grid-cols-2`}>
-          <div className="sm:col-span-2">
+        <motion.div key="pricing" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.35, ease: EASE }} className={`${sectionClass} space-y-6`}>
+          <div>
             <h2 className="text-xl font-bold text-brand-ink">Pricing & departures</h2>
-            <p className="mt-1 text-sm text-brand-muted">Set price, group size, and scheduled departure dates.</p>
+            <p className="mt-1 text-sm text-brand-muted">
+              Set your tour price and total capacity, then split slots across each departure date.
+            </p>
           </div>
-          <Field label="Price (USD)">
-            <input type="number" min={0} className={inputClass} value={form.priceAmount} onChange={(e) => patch({ priceAmount: Number(e.target.value) })} />
+
+          <div className="flex items-start gap-3 rounded-xl border border-brand-green/20 bg-brand-green/5 px-4 py-3">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-brand-green" strokeWidth={2} aria-hidden />
+            <p className="text-xs leading-relaxed text-brand-muted">
+              <span className="font-semibold text-brand-ink">How this works:</span> Set one{" "}
+              <span className="font-semibold text-brand-ink">total tour slots</span> figure for the whole listing.
+              Then divide those slots across each <span className="font-semibold text-brand-ink">departure date</span> — they must add up exactly.
+              Available seats per date are tracked automatically as bookings come in.
+            </p>
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field label="Price (Ghana Cedis)" hint={`Displayed as ${formatTourPriceLabel(form.priceAmount || 0)} on your listing.`}>
+              <input
+                type="number"
+                min={0}
+                className={inputClass}
+                value={form.priceAmount}
+                onChange={(e) => handlePriceChange(Number(e.target.value))}
+              />
+            </Field>
+            <Field label="Currency">
+              <select
+                className={inputClass}
+                value={form.priceCurrency || TOUR_CURRENCY.code}
+                onChange={(e) => {
+                  const selected = TOUR_CURRENCY_OPTIONS.find((c) => c.code === e.target.value) || TOUR_CURRENCY;
+                  patch({
+                    priceCurrency: selected.code,
+                    priceLabel: formatTourPriceLabel(form.priceAmount),
+                  });
+                }}
+              >
+                {TOUR_CURRENCY_OPTIONS.map((currency) => (
+                  <option key={currency.code} value={currency.code}>
+                    {currency.label} ({currency.code})
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+
+          <Field
+            label="Total tour slots"
+            hint="Your overall capacity for this tour. Split this number across all departure dates below."
+          >
+            <input
+              type="number"
+              min={1}
+              className={inputClass}
+              value={form.totalSlots ?? totalTourSlots}
+              onChange={(e) => handleTotalSlotsChange(Number(e.target.value))}
+              placeholder="18"
+            />
           </Field>
-          <Field label="Currency">
-            <input className={inputClass} value={form.priceCurrency} onChange={(e) => patch({ priceCurrency: e.target.value })} />
-          </Field>
-          <Field label="Group size min">
-            <input type="number" min={1} className={inputClass} value={form.groupSizeMin} onChange={(e) => patch({ groupSizeMin: Number(e.target.value) })} />
-          </Field>
-          <Field label="Group size max">
-            <input type="number" min={1} className={inputClass} value={form.groupSizeMax} onChange={(e) => patch({ groupSizeMax: Number(e.target.value) })} />
-          </Field>
-          <div className="sm:col-span-2">
-            <p className={labelClass}>Departure dates</p>
-            <div className="mt-3 space-y-3">
+
+          <div className="rounded-xl border border-brand-border/60 bg-brand-cream/40 px-4 py-3">
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <span className="font-semibold uppercase tracking-[0.12em] text-brand-muted">Slots allocated</span>
+              <span
+                className={[
+                  "font-bold tabular-nums",
+                  allocatedSlots === totalTourSlots
+                    ? "text-brand-green"
+                    : allocatedSlots > totalTourSlots
+                      ? "text-red-500"
+                      : "text-brand-orange",
+                ].join(" ")}
+              >
+                {allocatedSlots} / {totalTourSlots}
+              </span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-brand-border/40">
+              <div
+                className={[
+                  "h-full rounded-full transition-all duration-300",
+                  allocatedSlots > totalTourSlots ? "bg-red-400" : allocatedSlots === totalTourSlots ? "bg-brand-green" : "bg-brand-orange",
+                ].join(" ")}
+                style={{ width: `${allocationPercent}%` }}
+              />
+            </div>
+            {allocatedSlots !== totalTourSlots ? (
+              <p className="mt-2 text-[11px] text-brand-muted">
+                {allocatedSlots < totalTourSlots
+                  ? `${remainingSlots} slot${remainingSlots === 1 ? "" : "s"} left to assign across departures.`
+                  : `${allocatedSlots - totalTourSlots} slot${allocatedSlots - totalTourSlots === 1 ? "" : "s"} over your tour total — reduce departure slots or increase total tour slots.`}
+              </p>
+            ) : (
+              <p className="mt-2 text-[11px] font-medium text-brand-green">All tour slots are allocated across departures.</p>
+            )}
+          </div>
+
+          <div>
+            <p className={labelClass}>Scheduled departures</p>
+            <p className="mt-1 text-[11px] text-brand-muted">
+              Add every date this tour runs. Slots per date must sum to your total tour slots.
+            </p>
+            <div className="mt-4 space-y-4">
               {form.departureDates.map((dep, i) => (
-                <div key={i} className="grid gap-3 rounded-xl border border-brand-border/60 p-4 sm:grid-cols-4">
-                  <input type="date" className={inputClass} value={dep.date} onChange={(e) => {
-                    const next = [...form.departureDates];
-                    next[i] = { ...dep, date: e.target.value, dateLabel: e.target.value };
-                    patch({ departureDates: next });
-                  }} />
-                  <input type="number" min={1} className={inputClass} value={dep.spotsTotal} onChange={(e) => {
-                    const next = [...form.departureDates];
-                    next[i] = { ...dep, spotsTotal: Number(e.target.value) };
-                    patch({ departureDates: next });
-                  }} placeholder="Total spots" />
-                  <input type="number" min={0} className={inputClass} value={dep.spotsLeft} onChange={(e) => {
-                    const next = [...form.departureDates];
-                    next[i] = { ...dep, spotsLeft: Number(e.target.value) };
-                    patch({ departureDates: next });
-                  }} placeholder="Spots left" />
-                  <input className={inputClass} value={dep.label} onChange={(e) => {
-                    const next = [...form.departureDates];
-                    next[i] = { ...dep, label: e.target.value };
-                    patch({ departureDates: next });
-                  }} placeholder="Label" />
+                <div key={i} className="rounded-xl border border-brand-border/60 bg-brand-cream/40 p-4">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <p className="text-sm font-bold text-brand-ink">Departure {i + 1}</p>
+                    {form.departureDates.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => patch({ departureDates: form.departureDates.filter((_, idx) => idx !== i) })}
+                        className="text-xs font-semibold text-red-500 hover:underline"
+                      >
+                        Remove date
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Departure date" hint="When this trip leaves.">
+                      <input
+                        type="date"
+                        className={inputClass}
+                        value={dep.date}
+                        onChange={(e) => updateDeparture(i, {
+                          date: e.target.value,
+                          dateLabel: formatDepartureDateLabel(e.target.value),
+                        })}
+                      />
+                    </Field>
+                    <Field label="Slots for this departure" hint="Part of your total tour slots. All departures must add up to the total above.">
+                      <input
+                        type="number"
+                        min={1}
+                        className={inputClass}
+                        value={dep.spotsTotal}
+                        onChange={(e) => handleDepartureSpotsTotal(i, Number(e.target.value))}
+                        placeholder="18"
+                      />
+                    </Field>
+                  </div>
+                  {dep.date ? (
+                    <p className="mt-3 text-[11px] text-brand-muted">
+                      Preview: <span className="font-semibold text-brand-ink">{dep.dateLabel || formatDepartureDateLabel(dep.date)}</span>
+                      {" · "}
+                      {dep.spotsTotal} slots
+                    </p>
+                  ) : null}
                 </div>
               ))}
               <button
                 type="button"
-                onClick={() => patch({ departureDates: [...form.departureDates, { date: "", dateLabel: "", spotsTotal: 18, spotsLeft: 10, label: "Next departure" }] })}
+                onClick={handleAddDeparture}
                 className="text-sm font-semibold text-brand-green hover:underline"
               >
-                + Add departure
+                + Add another departure date
               </button>
             </div>
           </div>

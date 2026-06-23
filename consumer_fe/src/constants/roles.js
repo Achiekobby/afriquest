@@ -52,7 +52,7 @@ export function isAdminRole(role) {
   return role === USER_ROLES.ADMINISTRATOR;
 }
 
-const TOURIST_ONLY_PREFIXES = ["/dashboard", "/profile", "/my-inquiries", "/my-bookings"];
+const TOURIST_ONLY_PREFIXES = ["/dashboard", "/profile", "/my-inquiries", "/my-bookings", "/my-payments"];
 const OPERATOR_PREFIX = "/operator";
 const ADMIN_PREFIX = "/admin";
 
@@ -66,7 +66,21 @@ export function canAccessPath(pathname, role) {
   return true;
 }
 
-export function resolvePostAuthRedirect(pathname, role) {
-  if (pathname && canAccessPath(pathname, role)) return pathname;
-  return getHomeRouteForRole(role);
+function resolvePathFromLocation(target) {
+  if (!target) return "";
+  if (typeof target === "string") return target;
+
+  const pathname = target.pathname || "";
+  const search = target.search || "";
+  const hash = target.hash || "";
+
+  return `${pathname}${search}${hash}`;
+}
+
+export function resolvePostAuthRedirect(target, role) {
+  const path = resolvePathFromLocation(target);
+  const pathname = typeof target === "object" && target?.pathname ? target.pathname : path;
+
+  if (path && canAccessPath(pathname, role)) return path;
+  return getGuestLandingRoute(role);
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronDown, LayoutDashboard, LogOut, Luggage, User } from "lucide-react";
+import { ChevronDown, CreditCard, LayoutDashboard, LogOut, Luggage, Map, CalendarCheck, User } from "lucide-react";
 import { ADMIN_PERMISSIONS } from "../../constants/adminPermissions";
 import { ROUTES } from "../../constants/routes";
 import { USER_ROLES } from "../../constants/roles";
@@ -10,6 +10,15 @@ import { useAuth } from "../../hooks/useAuth";
 const EASE = [0.16, 1, 0.3, 1];
 
 function getMenuItems(role, user, hasAdminPermission) {
+  if (role === USER_ROLES.SITE_OPERATOR) {
+    return [
+      { to: ROUTES.operator.dashboard, label: "Dashboard", icon: LayoutDashboard },
+      { to: ROUTES.operator.tours, label: "My listings", icon: Map },
+      { to: ROUTES.operator.bookings, label: "Bookings", icon: CalendarCheck },
+      { to: ROUTES.operator.profile, label: "Profile", icon: User },
+    ];
+  }
+
   if (role === USER_ROLES.ADMINISTRATOR) {
     const items = [{ to: ROUTES.admin.dashboard, label: "Dashboard", icon: LayoutDashboard }];
 
@@ -24,6 +33,7 @@ function getMenuItems(role, user, hasAdminPermission) {
   return [
     { to: ROUTES.dashboard, label: "Dashboard", icon: LayoutDashboard },
     { to: ROUTES.myBookings, label: "My bookings", icon: Luggage },
+    { to: ROUTES.myPayments, label: "My payments", icon: CreditCard },
     { to: ROUTES.profile, label: "Profile", icon: User },
   ];
 }
@@ -77,13 +87,16 @@ export function AccountMenuLinks({ onNavigate, className = "" }) {
 }
 
 export default function AccountDropdown() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
 
   const displayName = getDisplayName(user);
   const initials = getInitials(user);
-  const subtitle = user?.email || user?.phone || "";
+  const subtitle =
+    role === USER_ROLES.SITE_OPERATOR
+      ? user?.organization || user?.email || user?.phone || ""
+      : user?.email || user?.phone || "";
 
   useEffect(() => {
     function handleClickOutside(event) {

@@ -8,7 +8,7 @@ import {
   AdminTableDesktop,
   AdminTableMobile,
 } from "../../components/admin/AdminResponsiveTable";
-import { useAdminPagination } from "../../hooks/useAdminPagination";
+import { useLocalAdminPagination } from "../../hooks/useAdminPagination";
 
 const STATUS_STYLES = {
   confirmed: "bg-emerald-100 text-emerald-700",
@@ -30,7 +30,7 @@ function StatusBadge({ status }) {
 
 export default function AdminBookingsPage() {
   const bookings = [];
-  const pagination = useAdminPagination(bookings);
+  const pagination = useLocalAdminPagination(bookings);
 
   return (
     <div className="space-y-6">

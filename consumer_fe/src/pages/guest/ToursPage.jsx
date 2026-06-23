@@ -1,34 +1,42 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Link, useSearchParams } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
+import { Loader2 } from "lucide-react";
+import publicListingsServiceApi from "../../apis/PublicListingsServiceApi";
 import Container from "../../components/layout/Container";
 import { ROUTES } from "../../constants/routes";
+import { mapServerPagination } from "../../utils/adminPaginationHelpers";
 import {
-  liveTours,
-  FILTER_CATEGORIES,
-  COUNTRY_FILTER_META,
-  isCountryFilter,
-  isLiveCountryFilter,
-} from "../../data/toursData";
+  buildListingsPayload,
+  COUNTRY_FILTER_OPTIONS,
+  formatDepartureDateLabel,
+  getPackageLineLabel,
+  LISTING_SORT_OPTIONS,
+  PACKAGE_FILTER_OPTIONS,
+  resolveCountryFilterFromParams,
+  resolvePackageFilterFromParams,
+  tourHasDepartureOnDate,
+  tourMatchesPackageLine,
+} from "../../utils/publicListingsHelpers";
 
 const EASE = [0.16, 1, 0.3, 1];
 
-// ── Star rating ───────────────────────────────────────────────────────────────
 function StarRating({ value }) {
+  if (!value) return null;
+
   return (
     <span className="flex items-center gap-0.5">
       <svg className="h-3 w-3 fill-brand-orange text-brand-orange" viewBox="0 0 20 20" aria-hidden>
         <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
       </svg>
-      <span className="text-[11px] font-semibold text-brand-ink">{value}</span>
+      <span className="text-[11px] font-semibold text-brand-ink">{Number(value).toFixed(1)}</span>
     </span>
   );
 }
 
-// ── Tour card ─────────────────────────────────────────────────────────────────
 function TourCard({ tour, index }) {
   const [imgError, setImgError] = useState(false);
-  const isFilling = tour.spotsLeft <= 3;
+  const isFilling = tour.spotsLeft <= 3 && tour.spotsLeft > 0;
 
   return (
     <motion.article
@@ -38,10 +46,13 @@ function TourCard({ tour, index }) {
       transition={{ duration: 0.4, ease: EASE, delay: Math.min(index * 0.04, 0.28) }}
       className="group flex flex-col"
     >
-      <Link to={ROUTES.tourBook(tour.slug)} aria-label={`Book ${tour.name}`} className="flex flex-col gap-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 rounded-xl">
-        {/* Image */}
+      <Link
+        to={ROUTES.tourDetail(tour.slug)}
+        aria-label={`View ${tour.name}`}
+        className="flex flex-col gap-2.5 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2"
+      >
         <div className="relative aspect-square overflow-hidden rounded-xl bg-brand-border/30">
-          {!imgError ? (
+          {!imgError && tour.image ? (
             <img
               src={tour.image}
               alt={tour.name}
@@ -54,40 +65,25 @@ function TourCard({ tour, index }) {
             </div>
           )}
 
-          {/* Gradient overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
 
-          {/* Badge */}
-          {tour.badge && (
+          {tour.badge ? (
             <span className={`absolute left-2.5 top-2.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${tour.badgeColor ?? "bg-white/90 text-brand-ink"}`}>
               {tour.badge}
             </span>
-          )}
+          ) : null}
 
-          {/* Filling fast */}
-          {isFilling && (
+          {isFilling ? (
             <span className="absolute right-2.5 top-2.5 flex items-center gap-1 rounded-full bg-red-500/90 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-sm">
-              <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
               {tour.spotsLeft} spots left
             </span>
-          )}
-
-          {/* Wishlist button */}
-          <button
-            type="button"
-            aria-label="Save to wishlist"
-            className="absolute right-2.5 bottom-2.5 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow-sm opacity-0 transition-opacity duration-200 group-hover:opacity-100 hover:bg-white"
-          >
-            <svg className="h-4 w-4 text-brand-ink" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-            </svg>
-          </button>
+          ) : null}
         </div>
 
-        {/* Info */}
         <div className="flex flex-col gap-0.5 px-0.5">
           <div className="flex items-start justify-between gap-2">
-            <p className="line-clamp-1 text-sm font-semibold text-brand-ink group-hover:text-brand-green transition-colors">
+            <p className="line-clamp-1 text-sm font-semibold text-brand-ink transition-colors group-hover:text-brand-green">
               {tour.name}
             </p>
             <StarRating value={tour.rating} />
@@ -105,161 +101,192 @@ function TourCard({ tour, index }) {
   );
 }
 
-// ── Filter pill ───────────────────────────────────────────────────────────────
-function FilterPill({ cat, active, onClick }) {
+function FilterChip({ option, active, onClick }) {
   return (
     <button
       type="button"
-      onClick={() => onClick(cat.id)}
+      onClick={() => onClick(option.id)}
       className={[
-        "relative flex shrink-0 flex-col items-center gap-1.5 px-4 pb-3 pt-2.5 text-center transition-all duration-200",
+        "flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all duration-200",
         active
-          ? "text-brand-ink"
-          : "text-brand-muted hover:text-brand-ink",
+          ? "border-brand-ink bg-brand-ink text-white shadow-sm"
+          : "border-brand-border/70 bg-white/80 text-brand-muted hover:border-brand-green/35 hover:text-brand-ink",
       ].join(" ")}
     >
-      <span className="text-xl leading-none">{cat.icon}</span>
-      <span className="whitespace-nowrap text-xs font-semibold">{cat.label}</span>
-      {active && (
-        <motion.span
-          layoutId="filter-underline"
-          className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full bg-brand-ink"
-        />
-      )}
+      <span className="text-sm leading-none">{option.icon}</span>
+      <span className="whitespace-nowrap">{option.label}</span>
     </button>
   );
 }
 
-// ── Sort dropdown ─────────────────────────────────────────────────────────────
-const SORT_OPTIONS = [
-  { value: "recommended", label: "Recommended" },
-  { value: "price-asc",   label: "Price: low to high" },
-  { value: "price-desc",  label: "Price: high to low" },
-  { value: "rating",      label: "Top rated" },
-  { value: "spots",       label: "Filling fast" },
-];
-
-function SortDropdown({ value, onChange }) {
+function SortDropdown({ value, onChange, compact = false }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => {
-    function handler(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    function handler(event) {
+      if (ref.current && !ref.current.contains(event.target)) setOpen(false);
     }
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const current = SORT_OPTIONS.find((o) => o.value === value);
+  const current = LISTING_SORT_OPTIONS.find((option) => option.value === value);
 
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((p) => !p)}
-        className="flex items-center gap-1.5 rounded-full border border-brand-border/80 bg-white px-4 py-2 text-xs font-semibold text-brand-ink shadow-sm transition-all hover:border-brand-green/40 hover:shadow-md"
+        onClick={() => setOpen((prev) => !prev)}
+        className={[
+          "flex items-center gap-1.5 rounded-full border border-brand-border/70 bg-white/80 font-semibold text-brand-ink shadow-sm transition-all hover:border-brand-green/35 hover:shadow-md",
+          compact ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-xs",
+        ].join(" ")}
       >
-        <svg className="h-3.5 w-3.5 text-brand-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M7 8h10M10 12h4" /></svg>
+        <svg className="h-3.5 w-3.5 text-brand-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M7 8h10M10 12h4" />
+        </svg>
         {current?.label}
-        <svg className={`h-3 w-3 transition-transform duration-200 ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+        <svg className={`h-3 w-3 transition-transform duration-200 ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
       </button>
 
       <AnimatePresence>
-        {open && (
+        {open ? (
           <motion.ul
             initial={{ opacity: 0, y: 6, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.97 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 top-full z-30 mt-2 min-w-[180px] overflow-hidden rounded-xl border border-brand-border/60 bg-white shadow-xl"
+            className="absolute right-0 top-full z-30 mt-2 min-w-[220px] overflow-hidden rounded-xl border border-brand-border/60 bg-white shadow-xl"
           >
-            {SORT_OPTIONS.map((opt) => (
-              <li key={opt.value}>
+            {LISTING_SORT_OPTIONS.map((option) => (
+              <li key={option.value}>
                 <button
                   type="button"
-                  onClick={() => { onChange(opt.value); setOpen(false); }}
-                  className={`flex w-full items-center justify-between px-4 py-2.5 text-xs transition-colors hover:bg-brand-cream ${opt.value === value ? "font-bold text-brand-green" : "text-brand-ink"}`}
+                  onClick={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                  className={`flex w-full flex-col items-start px-4 py-2.5 text-left transition-colors hover:bg-brand-cream ${option.value === value ? "bg-brand-green/5" : ""}`}
                 >
-                  {opt.label}
-                  {opt.value === value && (
-                    <svg className="h-3.5 w-3.5 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                  )}
+                  <span className={`text-xs ${option.value === value ? "font-bold text-brand-green" : "font-semibold text-brand-ink"}`}>
+                    {option.label}
+                  </span>
+                  <span className="mt-0.5 text-[10px] text-brand-muted">{option.description}</span>
                 </button>
               </li>
             ))}
           </motion.ul>
-        )}
+        ) : null}
       </AnimatePresence>
     </div>
   );
 }
 
-function CountryComingSoonEmpty({ filterId, onViewGhana }) {
-  const meta = COUNTRY_FILTER_META[filterId];
+function describeActiveFilters(countryFilter, sort, departureDate, packageFilter) {
+  const parts = [];
+  const country = COUNTRY_FILTER_OPTIONS.find((option) => option.id === countryFilter);
+  if (country?.apiCountry) parts.push(country.label);
 
-  return (
-    <motion.div
-      key={`coming-soon-${filterId}`}
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 8 }}
-      transition={{ duration: 0.35, ease: EASE }}
-      className="mx-auto max-w-lg py-16 text-center"
-    >
-      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.5rem] border border-brand-border/60 bg-brand-cream text-4xl shadow-sm">
-        {meta.icon}
-      </div>
-      <p className="mt-5 text-xs font-semibold uppercase tracking-[0.14em] text-brand-orange">Coming soon</p>
-      <h2 className="mt-2 text-2xl font-bold text-brand-ink">{meta.name} tours</h2>
-      <p className="mt-2 text-sm font-medium text-brand-green">{meta.tagline}</p>
-      <p className="mt-3 text-sm leading-relaxed text-brand-muted">{meta.description}</p>
-      <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-        <button
-          type="button"
-          onClick={onViewGhana}
-          className="inline-flex items-center gap-2 rounded-xl bg-brand-green px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_-10px_rgba(45,90,71,0.5)] transition-all hover:bg-brand-green-dark"
-        >
-          Explore Ghana tours
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M5 12h14M13 6l6 6-6 6" />
-          </svg>
-        </button>
-        <Link
-          to={ROUTES.contact}
-          className="inline-flex items-center gap-2 rounded-xl border border-brand-border bg-white px-6 py-3 text-sm font-semibold text-brand-ink shadow-sm transition-all hover:border-brand-green/30 hover:shadow-md"
-        >
-          Notify me when live
-        </Link>
-      </div>
-    </motion.div>
-  );
+  if (packageFilter) {
+    parts.push(getPackageLineLabel(packageFilter));
+  }
+
+  if (departureDate) {
+    parts.push(`Departs ${formatDepartureDateLabel(departureDate)}`);
+  }
+
+  const sortOption = LISTING_SORT_OPTIONS.find((option) => option.value === sort);
+  if (sort !== "default" && sortOption) parts.push(sortOption.label);
+
+  return parts.length ? parts.join(" · ") : "All published tours";
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
-function resolveFilterFromParams(countryParam) {
-  if (countryParam && FILTER_CATEGORIES.some((cat) => cat.id === countryParam)) {
-    return countryParam;
-  }
-  return "all";
+function buildToursSearchParams({ country, date, package: packageId }) {
+  const params = new URLSearchParams();
+  if (country && country !== "all") params.set("country", country);
+  if (packageId) params.set("package", packageId);
+  if (date) params.set("date", date);
+  return params;
 }
 
 export default function ToursPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const countryParam = searchParams.get("country");
-  const [activeFilter, setActiveFilter] = useState(() => resolveFilterFromParams(countryParam));
-  const [sort, setSort]         = useState("recommended");
-  const [search, setSearch]     = useState("");
+  const packageParam = searchParams.get("package");
+  const dateParam = searchParams.get("date") || "";
+  const [activeFilter, setActiveFilter] = useState(() => {
+    const resolvedPackage = resolvePackageFilterFromParams(packageParam);
+    if (resolvedPackage && !countryParam) return "ghana";
+    return resolveCountryFilterFromParams(countryParam);
+  });
+  const [activePackage, setActivePackage] = useState(() => resolvePackageFilterFromParams(packageParam));
+  const [activeDate, setActiveDate] = useState(dateParam);
+  const [sort, setSort] = useState("default");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [tours, setTours] = useState([]);
+  const [pagination, setPagination] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [filterScrolled, setFilterScrolled] = useState(false);
-  const filterRef           = useRef(null);
-  const scrollContainerRef  = useRef(null);
-  const searchRef           = useRef(null);
+  const filterRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const packageScrollContainerRef = useRef(null);
+
+  const showPackageFilters = activeFilter === "ghana" || activeFilter === "all";
+
+  const paginationMeta = useMemo(
+    () => mapServerPagination(pagination, { page }),
+    [pagination, page],
+  );
+
+  const loadListings = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    const payload = buildListingsPayload({
+      countryFilter: activePackage ? "ghana" : activeFilter,
+      sort,
+      departureDate: activeDate,
+      packageFilter: activePackage,
+    });
+    const result = await publicListingsServiceApi.listListings(payload, { page, per_page: 15 });
+
+    setLoading(false);
+
+    if (!result.ok) {
+      setTours([]);
+      setPagination(null);
+      setError(result.reason || result.message || "Could not load tours.");
+      return;
+    }
+
+    setTours(result.items);
+    setPagination(result.pagination);
+  }, [activeFilter, activePackage, sort, page, activeDate]);
 
   useEffect(() => {
-    setActiveFilter(resolveFilterFromParams(countryParam));
-  }, [countryParam]);
+    const resolvedPackage = resolvePackageFilterFromParams(packageParam);
+    setActivePackage(resolvedPackage);
+    if (resolvedPackage && !countryParam) {
+      setActiveFilter("ghana");
+      return;
+    }
+    setActiveFilter(resolveCountryFilterFromParams(countryParam));
+  }, [countryParam, packageParam]);
 
-  // Detect when the filter bar has reached its sticky position
+  useEffect(() => {
+    setActiveDate(dateParam);
+    setPage(1);
+  }, [dateParam]);
+
+  useEffect(() => {
+    loadListings();
+  }, [loadListings]);
+
   useEffect(() => {
     function onScroll() {
       if (!filterRef.current) return;
@@ -270,212 +297,326 @@ export default function ToursPage() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Filter + search + sort
-  const isComingSoonCountry = isCountryFilter(activeFilter) && !isLiveCountryFilter(activeFilter);
+  const visibleTours = useMemo(() => {
+    let list = tours;
 
-  const filtered = (() => {
-    if (isComingSoonCountry) return [];
-
-    let list = activeFilter === "all"
-      ? liveTours
-      : liveTours.filter((t) => t.categories.includes(activeFilter));
-
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (t) =>
-          t.name.toLowerCase().includes(q) ||
-          t.location.toLowerCase().includes(q) ||
-          t.country.toLowerCase().includes(q) ||
-          t.categories.some((c) => c.includes(q)),
-      );
+    if (activePackage) {
+      list = list.filter((tour) => tourMatchesPackageLine(tour, activePackage));
     }
 
-    if (sort === "price-asc")  list = [...list].sort((a, b) => a.priceNum - b.priceNum);
-    if (sort === "price-desc") list = [...list].sort((a, b) => b.priceNum - a.priceNum);
-    if (sort === "rating")     list = [...list].sort((a, b) => b.rating - a.rating);
-    if (sort === "spots")      list = [...list].sort((a, b) => a.spotsLeft - b.spotsLeft);
-    return list;
-  })();
+    if (activeDate) {
+      list = list.filter((tour) => tourHasDepartureOnDate(tour, activeDate));
+    }
 
-  const handleFilter = useCallback((id) => {
-    setActiveFilter(id);
-    if (id === "all") {
-      setSearchParams({}, { replace: true });
-    } else {
-      setSearchParams({ country: id }, { replace: true });
-    }
-    if (scrollContainerRef.current) {
-      const btn = scrollContainerRef.current.querySelector(`[data-cat="${id}"]`);
-      btn?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-    }
+    if (!search.trim()) return list;
+
+    const query = search.toLowerCase();
+    return list.filter(
+      (tour) =>
+        tour.name.toLowerCase().includes(query) ||
+        tour.location.toLowerCase().includes(query) ||
+        tour.country.toLowerCase().includes(query) ||
+        tour.categories.some((category) => category.includes(query)),
+    );
+  }, [tours, search, activeDate, activePackage]);
+
+  const applySearchParams = useCallback(({ country, date, package: packageId }) => {
+    const params = buildToursSearchParams({ country, date, package: packageId });
+    setSearchParams(params, { replace: true });
   }, [setSearchParams]);
 
-  const activeCatLabel = FILTER_CATEGORIES.find((c) => c.id === activeFilter)?.label ?? "All tours";
-  const hasActiveFilters = activeFilter !== "all" || search.trim() !== "";
+  const handleFilter = useCallback((id) => {
+    setPage(1);
+    setActiveFilter(id);
+    const keepPackage = id === "ghana" || id === "all";
+    const nextPackage = keepPackage ? activePackage : "";
+    if (!keepPackage) {
+      setActivePackage("");
+    }
+    applySearchParams({
+      country: id === "all" ? undefined : id,
+      date: activeDate || undefined,
+      package: nextPackage || undefined,
+    });
+    if (scrollContainerRef.current) {
+      const button = scrollContainerRef.current.querySelector(`[data-country="${id}"]`);
+      button?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+    }
+  }, [applySearchParams, activeDate, activePackage]);
+
+  const handlePackageFilter = useCallback((packageId) => {
+    setPage(1);
+    const nextPackage = activePackage === packageId ? "" : packageId;
+    setActivePackage(nextPackage);
+    const nextCountry = nextPackage
+      ? "ghana"
+      : activeFilter === "all"
+        ? undefined
+        : activeFilter;
+    if (nextPackage && activeFilter === "all") {
+      setActiveFilter("ghana");
+    }
+    applySearchParams({
+      country: nextCountry,
+      date: activeDate || undefined,
+      package: nextPackage || undefined,
+    });
+    if (packageScrollContainerRef.current) {
+      const button = packageScrollContainerRef.current.querySelector(`[data-package="${packageId}"]`);
+      button?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+    }
+  }, [activePackage, activeFilter, activeDate, applySearchParams]);
+
+  function handleSortChange(value) {
+    setPage(1);
+    setSort(value);
+  }
 
   function clearAll() {
+    setPage(1);
     setActiveFilter("all");
+    setActivePackage("");
+    setActiveDate("");
+    setSort("default");
     setSearch("");
     setSearchParams({}, { replace: true });
   }
 
-  function viewGhanaTours() {
-    handleFilter("ghana");
+  function clearDateFilter() {
+    setPage(1);
+    setActiveDate("");
+    applySearchParams({
+      country: activeFilter === "all" ? undefined : activeFilter,
+      date: undefined,
+      package: activePackage || undefined,
+    });
   }
+
+  function clearPackageFilter() {
+    setPage(1);
+    setActivePackage("");
+    applySearchParams({
+      country: activeFilter === "all" ? undefined : activeFilter,
+      date: activeDate || undefined,
+      package: undefined,
+    });
+  }
+
+  const hasActiveFilters =
+    activeFilter !== "all" ||
+    Boolean(activePackage) ||
+    sort !== "default" ||
+    search.trim() !== "" ||
+    Boolean(activeDate);
 
   return (
     <div className="min-h-screen bg-white">
-
-      {/* ── Page header ─────────────────────────────────────────────── */}
-      <div className="bg-white px-4 pb-6 pt-8 sm:px-6 lg:px-8">
-        <Container>
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: EASE }}
-            className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"
-          >
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-orange">
-                AfriQwest Travel &amp; Tours
-              </p>
-              <h1 className="mt-1.5 text-2xl font-bold text-brand-ink sm:text-3xl">
-                Explore our tours
-              </h1>
-              <p className="mt-1 text-sm text-brand-muted">
-                {liveTours.length} live Ghana experiences · Kenya &amp; South Africa coming soon
-              </p>
-            </div>
-
-            {/* Search input */}
-            <div ref={searchRef} className="relative w-full max-w-xs sm:w-72 lg:w-80">
-              <svg
-                className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-muted"
-                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden
-              >
-                <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
-              </svg>
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search tours, locations…"
-                className="h-10 w-full rounded-full border border-brand-border/70 bg-white pl-9 pr-9 text-sm text-brand-ink placeholder:text-brand-muted/70 shadow-sm outline-none transition-all focus:border-brand-green/50 focus:ring-2 focus:ring-brand-green/20"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch("")}
-                  aria-label="Clear search"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-muted hover:text-brand-ink"
-                >
-                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" aria-hidden><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-              )}
-            </div>
-          </motion.div>
-        </Container>
-      </div>
-
-      {/* ── Sticky filter bar — sits 8px below the navbar ────────────── */}
       <div
         ref={filterRef}
         className={[
-          "sticky top-[72px] z-40 w-full border-b transition-all duration-300",
+          "sticky top-[72px] z-40 w-full border-b transition-all duration-300 relative",
           filterScrolled
             ? "border-brand-border/60 bg-white/95 shadow-[0_4px_20px_-8px_rgba(28,43,38,0.12)] backdrop-blur-xl"
-            : "border-brand-border/40 bg-white",
+            : "border-brand-border/40 bg-brand-cream/90",
         ].join(" ")}
       >
-        <div className="px-4 sm:px-6 lg:px-8">
-          <Container className="flex items-center justify-between gap-4 py-0">
-            {/* Scrollable category pills */}
-            <div
-              ref={scrollContainerRef}
-              className="flex flex-1 items-stretch gap-0 overflow-x-auto"
-              style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+        <div
+          aria-hidden
+          className="h-0.5 bg-gradient-to-r from-brand-green via-brand-gold to-brand-orange"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-30"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg fill='none' transform='rotate(45 14 14)'%3E%3Crect width='14' height='14' fill='%232D5A47' fill-opacity='0.03'/%3E%3Crect x='14' y='14' width='14' height='14' fill='%23E3A020' fill-opacity='0.025'/%3E%3C/g%3E%3C/svg%3E\")",
+            backgroundSize: "28px 28px",
+          }}
+        />
+
+        <div className="relative px-4 sm:px-6 lg:px-8">
+          <Container className="py-2.5 sm:py-3">
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, ease: EASE }}
+              className="flex flex-wrap items-center gap-x-3 gap-y-2"
             >
-              {FILTER_CATEGORIES.map((cat) => (
-                <div key={cat.id} data-cat={cat.id}>
-                  <FilterPill
-                    cat={cat}
-                    active={activeFilter === cat.id}
-                    onClick={handleFilter}
-                  />
-                </div>
-              ))}
+              <div className="flex shrink-0 items-center gap-2">
+                <h1 className="text-lg font-bold tracking-tight text-brand-ink sm:text-xl">Tours</h1>
+                <span className="rounded-md bg-brand-green/12 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-brand-green">
+                  {loading ? "…" : paginationMeta.totalItems || tours.length}
+                </span>
+              </div>
+
+              <div className="relative min-w-0 flex-1 sm:max-w-xs lg:max-w-sm">
+                <svg
+                  className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-brand-muted"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  aria-hidden
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="M21 21l-4.35-4.35" />
+                </svg>
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search tours…"
+                  className="h-8 w-full rounded-full border border-brand-border/70 bg-white/90 pl-8 pr-8 text-sm text-brand-ink placeholder:text-brand-muted/70 outline-none transition-all focus:border-brand-green/50 focus:ring-2 focus:ring-brand-green/15"
+                />
+                {search ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    aria-label="Clear search"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-muted hover:text-brand-ink"
+                  >
+                    <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" aria-hidden>
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="shrink-0">
+                <SortDropdown value={sort} onChange={handleSortChange} compact />
+              </div>
+            </motion.div>
+
+            <div className="mt-2 flex min-w-0 items-center gap-2 border-t border-brand-border/35 pt-2">
+              <div
+                ref={scrollContainerRef}
+                className="flex shrink-0 items-center gap-1 overflow-x-auto"
+                style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+              >
+                {COUNTRY_FILTER_OPTIONS.map((option) => (
+                  <div key={option.id} data-country={option.id}>
+                    <FilterChip
+                      option={option}
+                      active={activeFilter === option.id}
+                      onClick={handleFilter}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {showPackageFilters ? (
+                <>
+                  <span className="h-3.5 w-px shrink-0 bg-brand-border/60" aria-hidden />
+                  <div
+                    ref={packageScrollContainerRef}
+                    className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+                    style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+                  >
+                    {PACKAGE_FILTER_OPTIONS.map((option) => (
+                      <div key={option.id} data-package={option.id}>
+                        <FilterChip
+                          option={option}
+                          active={activePackage === option.id}
+                          onClick={handlePackageFilter}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : null}
             </div>
 
-            {/* Divider + sort */}
-            <div className="flex shrink-0 items-center gap-3 border-l border-brand-border/50 pl-4">
-              <SortDropdown value={sort} onChange={setSort} />
-            </div>
+            <AnimatePresence>
+              {hasActiveFilters ? (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2, ease: EASE }}
+                  className="overflow-hidden"
+                >
+                  <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-brand-border/35 pt-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-brand-muted">
+                      {loading ? "…" : visibleTours.length}
+                      {!search.trim() && paginationMeta.totalItems ? ` of ${paginationMeta.totalItems}` : ""}
+                      tour{visibleTours.length === 1 ? "" : "s"}
+                    </span>
+                    <span className="text-brand-border">·</span>
+                    <span className="text-xs font-medium text-brand-green">
+                      {describeActiveFilters(activeFilter, sort, activeDate, activePackage)}
+                    </span>
+                    {search.trim() ? (
+                      <>
+                        <span className="text-brand-border">·</span>
+                        <span className="text-xs text-brand-muted">
+                          &ldquo;<span className="font-medium text-brand-ink">{search}</span>&rdquo;
+                        </span>
+                      </>
+                    ) : null}
+                    {activeDate ? (
+                      <button
+                        type="button"
+                        onClick={clearDateFilter}
+                        className="rounded-full bg-brand-orange/10 px-2 py-0.5 text-[10px] font-semibold text-brand-orange hover:bg-brand-orange/15"
+                      >
+                        Clear date ×
+                      </button>
+                    ) : null}
+                    {activePackage ? (
+                      <button
+                        type="button"
+                        onClick={clearPackageFilter}
+                        className="rounded-full bg-brand-orange/10 px-2 py-0.5 text-[10px] font-semibold text-brand-orange hover:bg-brand-orange/15"
+                      >
+                        Clear package ×
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={clearAll}
+                      className="ml-auto text-[10px] font-semibold text-brand-muted underline-offset-2 hover:text-brand-ink hover:underline"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </Container>
         </div>
       </div>
 
-      {/* ── Grid ────────────────────────────────────────────────────── */}
-      <div className="px-4 pb-16 pt-8 sm:px-6 lg:px-8">
+      <div className="px-4 pb-16 pt-6 sm:px-6 lg:px-8">
         <Container>
-          {/* Result count */}
-          <div className="mb-5 flex items-center justify-between">
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={`${activeFilter}-${sort}-${search}`}
+          {error ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-600">
+              {error}
+            </div>
+          ) : null}
+
+          <AnimatePresence mode="wait">
+            {loading ? (
+              <motion.div
+                key="loading"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="text-sm text-brand-muted"
+                className="flex min-h-[280px] items-center justify-center"
               >
-                {isComingSoonCountry ? (
-                  <>
-                    <span className="font-semibold text-brand-ink">Coming soon</span>
-                    {" · "}
-                    <span className="font-medium text-brand-green">{activeCatLabel}</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="font-semibold text-brand-ink">{filtered.length} tours</span>
-                    {activeFilter !== "all" && (
-                      <> · <span className="font-medium text-brand-green">{activeCatLabel}</span></>
-                    )}
-                    {search.trim() && (
-                      <> · &ldquo;<span className="font-medium text-brand-ink">{search}</span>&rdquo;</>
-                    )}
-                  </>
-                )}
-              </motion.p>
-            </AnimatePresence>
-
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={clearAll}
-                className="flex items-center gap-1 text-xs font-semibold text-brand-muted underline-offset-2 hover:text-brand-ink hover:underline"
-              >
-                Clear all
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            )}
-          </div>
-
-          {/* 6-column Airbnb-style grid */}
-          <AnimatePresence mode="wait">
-            {isComingSoonCountry ? (
-              <CountryComingSoonEmpty filterId={activeFilter} onViewGhana={viewGhanaTours} />
-            ) : filtered.length > 0 ? (
+                <Loader2 className="h-8 w-8 animate-spin text-brand-green" strokeWidth={2} aria-hidden />
+              </motion.div>
+            ) : visibleTours.length > 0 ? (
               <motion.div
-                key={`grid-${activeFilter}-${sort}`}
+                key={`grid-${activeFilter}-${sort}-${page}`}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
                 className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
               >
-                {filtered.map((tour, i) => (
-                  <TourCard key={tour.slug} tour={tour} index={i} />
+                {visibleTours.map((tour, index) => (
+                  <TourCard key={tour.slug} tour={tour} index={index} />
                 ))}
               </motion.div>
             ) : (
@@ -488,7 +629,11 @@ export default function ToursPage() {
               >
                 <span className="text-5xl">🌍</span>
                 <p className="mt-4 text-lg font-semibold text-brand-ink">No tours found</p>
-                <p className="mt-1.5 text-sm text-brand-muted">Try a different category or clear the filter.</p>
+                <p className="mt-1.5 text-sm text-brand-muted">
+                  {activeDate
+                    ? "Try another departure date, country, or reset your filters."
+                    : "Try another country or reset the sort filters."}
+                </p>
                 <button
                   type="button"
                   onClick={clearAll}
@@ -500,8 +645,31 @@ export default function ToursPage() {
             )}
           </AnimatePresence>
 
-          {/* Bottom CTA banner */}
-          {filtered.length > 0 && (
+          {!loading && paginationMeta.totalPages > 1 ? (
+            <nav aria-label="Tour listings pagination" className="mt-10 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                className="rounded-xl border border-brand-border px-4 py-2 text-sm font-semibold text-brand-ink transition-colors hover:bg-brand-cream disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span className="text-sm text-brand-muted">
+                Page <span className="font-semibold text-brand-ink">{page}</span> of {paginationMeta.totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page >= paginationMeta.totalPages}
+                onClick={() => setPage((current) => current + 1)}
+                className="rounded-xl border border-brand-border px-4 py-2 text-sm font-semibold text-brand-ink transition-colors hover:bg-brand-cream disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </nav>
+          ) : null}
+
+          {visibleTours.length > 0 ? (
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -531,12 +699,14 @@ export default function ToursPage() {
                     className="inline-flex items-center gap-2 rounded-xl bg-white px-7 py-3 text-sm font-semibold text-brand-green shadow-lg transition-all hover:bg-brand-cream"
                   >
                     Request a custom quote
-                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="M5 12h14M13 6l6 6-6 6" />
+                    </svg>
                   </Link>
                 </div>
               </div>
             </motion.div>
-          )}
+          ) : null}
         </Container>
       </div>
     </div>

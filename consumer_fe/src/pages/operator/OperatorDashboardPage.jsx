@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { motion } from "motion/react";
+import { BadgeCheck, MapPin, Plus } from "lucide-react";
 import { ROUTES } from "../../constants/routes";
 import { useAuth } from "../../hooks/useAuth";
-import { getOperatorTours } from "../../utils/operatorTourStorage";
+import operatorToursServiceApi from "../../apis/OperatorToursServiceApi";
+import { buildLocationsLabel } from "../../utils/operatorTourMapper";
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -33,17 +35,24 @@ function statusPill(status) {
 }
 
 export default function OperatorDashboardPage() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [tours, setTours] = useState([]);
 
   useEffect(() => {
-    function refresh() {
-      setTours(getOperatorTours());
+    if (!token) return undefined;
+
+    let active = true;
+    async function load() {
+      const result = await operatorToursServiceApi.listTours(token, { page: 1, per_page: 15 });
+      if (!active) return;
+      if (result.ok) setTours(result.items || []);
     }
-    refresh();
-    window.addEventListener("afriqwest:operator-tours-updated", refresh);
-    return () => window.removeEventListener("afriqwest:operator-tours-updated", refresh);
-  }, []);
+
+    load();
+    return () => {
+      active = false;
+    };
+  }, [token]);
 
   const published = tours.filter((t) => t.status === "published").length;
   const drafts = tours.filter((t) => t.status === "draft").length;
@@ -55,15 +64,31 @@ export default function OperatorDashboardPage() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">Operator dashboard</p>
           <h1 className="mt-1 font-heading text-3xl text-brand-ink sm:text-4xl">
-            Welcome back{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
+            Welcome back{user?.firstName ? `, ${user.firstName}` : user?.name ? `, ${user.name.split(" ")[0]}` : ""}
           </h1>
           <p className="mt-2 max-w-xl text-sm text-brand-muted">
             Manage tour listings, departure capacity, and bookings for{" "}
             <span className="font-semibold text-brand-ink">{user?.organization || "your tourist site"}</span>.
           </p>
+          {user?.location ? (
+            <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-brand-muted">
+              <MapPin className="h-3.5 w-3.5 text-brand-green" strokeWidth={1.75} aria-hidden />
+              {user.location}
+            </p>
+          ) : null}
         </div>
-        <Link to={ROUTES.operator.tourNew} className="btn-primary">+ Create listing</Link>
+        <Link to={ROUTES.operator.tourNew} className="btn-primary inline-flex items-center gap-2">
+          <Plus className="h-4 w-4" strokeWidth={2} aria-hidden />
+          Create listing
+        </Link>
       </div>
+
+      {user?.isVerified ? (
+        <div className="inline-flex items-center gap-2 rounded-full border border-brand-green/20 bg-brand-green/8 px-4 py-2 text-sm font-semibold text-brand-green">
+          <BadgeCheck className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+          Verified operator account
+        </div>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Live listings" value={published} sub={`${drafts} draft${drafts === 1 ? "" : "s"} in progress`} accent="bg-brand-green" />
@@ -87,16 +112,16 @@ export default function OperatorDashboardPage() {
           ) : (
             <ul className="mt-5 divide-y divide-brand-border/50">
               {tours.slice(0, 5).map((tour) => (
-                <li key={tour.id} className="flex flex-wrap items-center gap-4 py-4 first:pt-0">
+                <li key={tour.slug || tour.name} className="flex flex-wrap items-center gap-4 py-4 first:pt-0">
                   <img src={tour.coverImageUrl} alt="" className="h-14 w-20 rounded-lg object-cover" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold text-brand-ink">{tour.name || "Untitled"}</p>
-                    <p className="text-xs text-brand-muted">{tour.location || tour.country}</p>
+                    <p className="text-xs text-brand-muted">{buildLocationsLabel(tour.locations) || tour.country}</p>
                   </div>
                   <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${statusPill(tour.status)}`}>
                     {tour.status}
                   </span>
-                  <Link to={ROUTES.operator.tourEdit(tour.id)} className="text-sm font-semibold text-brand-green hover:underline">Edit</Link>
+                  <Link to={ROUTES.operator.tourDetail(tour.slug)} className="text-sm font-semibold text-brand-green hover:underline">Manage</Link>
                 </li>
               ))}
             </ul>

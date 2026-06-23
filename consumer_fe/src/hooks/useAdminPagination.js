@@ -1,6 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  DEFAULT_SERVER_PAGE_SIZE,
+  mapServerPagination,
+  paginateLocalItems,
+  parsePaginatedList,
+} from "../utils/adminPaginationHelpers";
 
-export const ADMIN_TABLE_PAGE_SIZE = 10;
+export const ADMIN_TABLE_PAGE_SIZE = DEFAULT_SERVER_PAGE_SIZE;
+
+export function useDebouncedValue(value, delay = 350) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+
+  return debounced;
+}
 
 export function useAdminPagination(items, { pageSize = ADMIN_TABLE_PAGE_SIZE, resetKey } = {}) {
   const [page, setPage] = useState(1);
@@ -39,24 +56,96 @@ export function useAdminPagination(items, { pageSize = ADMIN_TABLE_PAGE_SIZE, re
   };
 }
 
+export function useServerAdminPagination({ pageSize = DEFAULT_SERVER_PAGE_SIZE, resetKey } = {}) {
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({
+    totalItems: 0,
+    totalPages: 1,
+    rangeStart: 0,
+    rangeEnd: 0,
+    hasPagination: false,
+  });
+
+  useEffect(() => {
+    setPage(1);
+  }, [resetKey]);
+
+  const syncFromResponse = useCallback(
+    (data, requestedPage = page) => {
+      const { items, pagination } = parsePaginatedList(data);
+      const nextMeta = mapServerPagination(pagination, { page: requestedPage, pageSize });
+
+      if (nextMeta.totalPages > 0 && requestedPage > nextMeta.totalPages) {
+        setPage(nextMeta.totalPages);
+        return { items, meta: nextMeta, shouldRefetch: true };
+      }
+
+      setMeta(nextMeta);
+      return { items, meta: nextMeta, shouldRefetch: false };
+    },
+    [page, pageSize]
+  );
+
+  return {
+    page,
+    setPage,
+    pageSize,
+    ...meta,
+    syncFromResponse,
+  };
+}
+
+export function useLocalAdminPagination(items, { pageSize = DEFAULT_SERVER_PAGE_SIZE, resetKey } = {}) {
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [resetKey]);
+
+  const { items: paginatedItems, pagination } = useMemo(
+    () => paginateLocalItems(items, page, pageSize),
+    [items, page, pageSize]
+  );
+
+  const meta = useMemo(() => mapServerPagination(pagination, { page, pageSize }), [pagination, page, pageSize]);
+
+  useEffect(() => {
+    if (page > meta.totalPages) {
+      setPage(meta.totalPages);
+    }
+  }, [page, meta.totalPages]);
+
+  return {
+    page,
+    setPage,
+    pageSize,
+    paginatedItems,
+    totalItems: meta.totalItems,
+    totalPages: meta.totalPages,
+    rangeStart: meta.rangeStart,
+    rangeEnd: meta.rangeEnd,
+    hasPagination: meta.hasPagination,
+  };
+}
+
 function buildVisiblePages(current, total) {
   if (total <= 5) {
     return Array.from({ length: total }, (_, index) => index + 1);
   }
 
   const pages = new Set([1, total, current, current - 1, current + 1]);
-  return [...pages].filter((page) => page >= 1 && page <= total).sort((a, b) => a - b);
+  return [...pages].filter((p) => p >= 1 && p <= total).sort((a, b) => a - b);
 }
 
 export function getAdminPaginationPages(current, total) {
   const visible = buildVisiblePages(current, total);
   const items = [];
 
-  visible.forEach((page, index) => {
-    if (index > 0 && page - visible[index - 1] > 1) {
+  visible.forEach((p, index) => {
+    if (index > 0 && p - visible[index - 1] > 1) {
       items.push("ellipsis");
     }
-    items.push(page);
+    items.push(p);
   });
 
   return items;

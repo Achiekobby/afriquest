@@ -1,7 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
+import { toast } from "react-toastify";
+import contactsServiceApi from "../../apis/ContactsServiceApi";
 import Container from "../../components/layout/Container";
 import env, { getWhatsAppUrl } from "../../config/env";
+import { useAuth } from "../../hooks/useAuth";
+import { normalizePhoneForApi } from "../../utils/phoneUtils";
 
 const EASE = [0.16, 1, 0.3, 1];
 const rise = (delay = 0) => ({
@@ -12,13 +16,43 @@ const rise = (delay = 0) => ({
 });
 
 const INQUIRY_TYPES = [
-  "General enquiry",
-  "Group / university tour",
-  "Corporate retreat",
-  "Custom itinerary",
-  "Partnership / media",
-  "Other",
+  { value: "general_enquiry", label: "General enquiry" },
+  { value: "group_university_tour", label: "Group / university tour" },
+  { value: "corporate_retreat", label: "Corporate retreat" },
+  { value: "custom_itinerary", label: "Custom itinerary" },
+  { value: "partnership_media", label: "Partnership / media" },
+  { value: "other", label: "Other" },
 ];
+
+function getInitialForm(user) {
+  return {
+    name: user?.name || "",
+    email: user?.email || "",
+    phone: user?.phone || "",
+    inquiry: "",
+    message: "",
+  };
+}
+
+function validateContactForm(form) {
+  const errors = {};
+  const name = form.name.trim();
+  const email = form.email.trim();
+  const message = form.message.trim();
+
+  if (!name) errors.name = "Full name is required.";
+  else if (name.length < 2) errors.name = "Enter at least 2 characters.";
+
+  if (!email) errors.email = "Email address is required.";
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = "Enter a valid email address.";
+
+  if (!form.inquiry) errors.inquiry = "Select an inquiry type.";
+
+  if (!message) errors.message = "Message is required.";
+  else if (message.length < 10) errors.message = "Message must be at least 10 characters.";
+
+  return errors;
+}
 
 const CONTACT_ITEMS = [
   {
@@ -79,7 +113,7 @@ const FAQS = [
   { q: "Is travel insurance included?", a: "Travel insurance is not included by default but we strongly recommend it and can connect you with trusted providers." },
 ];
 
-function InputField({ label, id, type = "text", required, placeholder, value, onChange }) {
+function InputField({ label, id, type = "text", required, placeholder, value, onChange, error }) {
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-xs font-semibold text-brand-ink">
@@ -92,8 +126,14 @@ function InputField({ label, id, type = "text", required, placeholder, value, on
         placeholder={placeholder}
         value={value}
         onChange={onChange}
-        className="h-11 w-full rounded-xl border border-brand-border/70 bg-white px-4 text-sm text-brand-ink placeholder:text-brand-muted/60 shadow-sm outline-none transition-all focus:border-brand-green/50 focus:ring-2 focus:ring-brand-green/15"
+        className={[
+          "h-11 w-full rounded-xl border bg-white px-4 text-sm text-brand-ink placeholder:text-brand-muted/60 shadow-sm outline-none transition-all focus:ring-2",
+          error
+            ? "border-red-400 focus:border-red-400 focus:ring-red-100"
+            : "border-brand-border/70 focus:border-brand-green/50 focus:ring-brand-green/15",
+        ].join(" ")}
       />
+      {error ? <p className="text-xs font-medium text-red-500">{error}</p> : null}
     </div>
   );
 }
@@ -131,24 +171,62 @@ function FaqItem({ faq, index }) {
 }
 
 export default function ContactPage() {
-  const [form, setForm] = useState({
-    name: "", email: "", phone: "", inquiry: "", message: "",
-  });
+  const { user, token, isAuthenticated } = useAuth();
+  const [form, setForm] = useState(() => getInitialForm(user));
+  const [errors, setErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (!user) return;
+    setForm((prev) => ({
+      ...prev,
+      name: prev.name || user.name || "",
+      email: prev.email || user.email || "",
+      phone: prev.phone || user.phone || "",
+    }));
+  }, [user]);
+
   function update(field) {
-    return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+    return (e) => {
+      setForm((f) => ({ ...f, [field]: e.target.value }));
+      setErrors((prev) => ({ ...prev, [field]: "" }));
+    };
   }
 
-  function handleSubmit(e) {
+  function resetForm() {
+    setForm(getInitialForm(user));
+    setErrors({});
+    setSubmitted(false);
+  }
+
+  async function handleSubmit(e) {
     e.preventDefault();
+    const nextErrors = validateContactForm(form);
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
+    const payload = {
+      fullname: form.name.trim(),
+      email: form.email.trim(),
+      message: form.message.trim(),
+      type: form.inquiry,
+    };
+
+    const phone = normalizePhoneForApi(form.phone);
+    if (phone) payload.phone_number = phone;
+
     setLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false);
-      setSubmitted(true);
-    }, 1200);
+    const result = await contactsServiceApi.submitContact(payload, { token: isAuthenticated ? token : null });
+    setLoading(false);
+
+    if (!result.ok) {
+      toast.error(result.reason || result.message || "Could not send your message. Please try again.");
+      return;
+    }
+
+    setSubmitted(true);
+    toast.success(result.reason || result.message || "Contact submitted");
   }
 
   return (
@@ -185,7 +263,10 @@ export default function ContactPage() {
               <div className="overflow-hidden rounded-[1.75rem] border border-brand-border/60 bg-white shadow-[0_16px_48px_-20px_rgba(28,43,38,0.25)]">
                 <div className="border-b border-brand-border/40 px-7 py-5">
                   <h2 className="text-lg font-bold text-brand-ink">Send us a message</h2>
-                  <p className="mt-0.5 text-sm text-brand-muted">We&apos;ll get back to you within one business day.</p>
+                  <p className="mt-0.5 text-sm text-brand-muted">
+                    We&apos;ll get back to you within one business day.
+                    {isAuthenticated ? " Your account details are pre-filled — edit them if needed." : ""}
+                  </p>
                 </div>
 
                 {submitted ? (
@@ -206,7 +287,7 @@ export default function ContactPage() {
                     </p>
                     <button
                       type="button"
-                      onClick={() => { setSubmitted(false); setForm({ name: "", email: "", phone: "", inquiry: "", message: "" }); }}
+                      onClick={resetForm}
                       className="mt-6 text-sm font-semibold text-brand-green underline underline-offset-2"
                     >
                       Send another message
@@ -215,8 +296,8 @@ export default function ContactPage() {
                 ) : (
                   <form onSubmit={handleSubmit} className="space-y-5 px-7 py-7">
                     <div className="grid gap-4 sm:grid-cols-2">
-                      <InputField label="Full name" id="name" required placeholder="Jane Doe" value={form.name} onChange={update("name")} />
-                      <InputField label="Email address" id="email" type="email" required placeholder="jane@example.com" value={form.email} onChange={update("email")} />
+                      <InputField label="Full name" id="name" required placeholder="Jane Doe" value={form.name} onChange={update("name")} error={errors.name} />
+                      <InputField label="Email address" id="email" type="email" required placeholder="jane@example.com" value={form.email} onChange={update("email")} error={errors.email} />
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <InputField label="Phone (optional)" id="phone" type="tel" placeholder="+1 234 567 8900" value={form.phone} onChange={update("phone")} />
@@ -229,11 +310,19 @@ export default function ContactPage() {
                           required
                           value={form.inquiry}
                           onChange={update("inquiry")}
-                          className="h-11 w-full rounded-xl border border-brand-border/70 bg-white px-4 text-sm text-brand-ink shadow-sm outline-none transition-all focus:border-brand-green/50 focus:ring-2 focus:ring-brand-green/15"
+                          className={[
+                            "h-11 w-full rounded-xl border bg-white px-4 text-sm text-brand-ink shadow-sm outline-none transition-all focus:ring-2",
+                            errors.inquiry
+                              ? "border-red-400 focus:border-red-400 focus:ring-red-100"
+                              : "border-brand-border/70 focus:border-brand-green/50 focus:ring-brand-green/15",
+                          ].join(" ")}
                         >
                           <option value="" disabled>Select type…</option>
-                          {INQUIRY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                          {INQUIRY_TYPES.map((t) => (
+                            <option key={t.value} value={t.value}>{t.label}</option>
+                          ))}
                         </select>
+                        {errors.inquiry ? <p className="text-xs font-medium text-red-500">{errors.inquiry}</p> : null}
                       </div>
                     </div>
                     <div className="flex flex-col gap-1.5">
@@ -247,8 +336,14 @@ export default function ContactPage() {
                         placeholder="Tell us about your group size, desired dates, countries of interest, and any special requirements…"
                         value={form.message}
                         onChange={update("message")}
-                        className="w-full resize-none rounded-xl border border-brand-border/70 bg-white px-4 py-3 text-sm text-brand-ink placeholder:text-brand-muted/60 shadow-sm outline-none transition-all focus:border-brand-green/50 focus:ring-2 focus:ring-brand-green/15"
+                        className={[
+                          "w-full resize-none rounded-xl border bg-white px-4 py-3 text-sm text-brand-ink placeholder:text-brand-muted/60 shadow-sm outline-none transition-all focus:ring-2",
+                          errors.message
+                            ? "border-red-400 focus:border-red-400 focus:ring-red-100"
+                            : "border-brand-border/70 focus:border-brand-green/50 focus:ring-brand-green/15",
+                        ].join(" ")}
                       />
+                      {errors.message ? <p className="text-xs font-medium text-red-500">{errors.message}</p> : null}
                     </div>
                     <button
                       type="submit"

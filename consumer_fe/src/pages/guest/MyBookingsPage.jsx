@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
+import { Loader2, Pencil } from "lucide-react";
+import { toast } from "react-toastify";
 import Container from "../../components/layout/Container";
 import { ROUTES } from "../../constants/routes";
 import { getWhatsAppUrl } from "../../config/env";
+import consumerPaymentsServiceApi from "../../apis/ConsumerPaymentsServiceApi";
+import { useAuth } from "../../hooks/useAuth";
+import { useClientBookings } from "../../hooks/useClientBookings";
 import { downloadBookingReceipt } from "../../utils/bookingReceipt";
-import { getBookings, isUpcoming } from "../../utils/bookingStorage";
+import { formatBookingCurrency, canViewBookingReceipt, canEditBooking } from "../../utils/bookingHelpers";
+import { extractPaymentRedirectUrl } from "../../utils/paymentHelpers";
+import { isUpcoming } from "../../utils/bookingStorage";
+import { mapServerPagination } from "../../utils/adminPaginationHelpers";
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -23,19 +31,27 @@ const STATUS_CONFIG = {
   reserved: { label: "Pending payment", className: "bg-brand-orange/10 text-brand-orange ring-brand-orange/20" },
 };
 
-function formatCurrency(amount) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(amount);
-}
-
 function formatSavedDate(iso) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(iso));
 }
 
-function BookingCard({ booking, index }) {
+function BookingCard({ booking, index, onCompletePayment, payingRef }) {
   const status = STATUS_CONFIG[booking.status] ?? STATUS_CONFIG.reserved;
   const upcoming = isUpcoming(booking);
   const image = booking.tour?.image;
   const slug = booking.tour?.slug;
+  const detailCode = booking.bookingCode || booking.bookingRef;
+  const amountLabel = formatBookingCurrency(booking.subtotal, booking.currency);
+  const paymentNote =
+    booking.paymentMode === "online"
+      ? booking.status === "paid"
+        ? " paid online"
+        : " due online"
+      : " due on site";
+  const canPayOnline = booking.paymentMode === "online" && booking.status === "reserved";
+  const isPaying = payingRef === detailCode;
+  const canViewReceipt = canViewBookingReceipt(booking);
+  const canEdit = canEditBooking(booking);
 
   return (
     <motion.article
@@ -61,17 +77,15 @@ function BookingCard({ booking, index }) {
         </div>
 
         {/* Content */}
-        <div className="flex flex-1 flex-col p-5 sm:p-6">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="font-mono text-xs font-bold text-brand-green">{booking.bookingRef}</p>
-              <h2 className="mt-1 text-lg font-bold text-brand-ink">{booking.tour.name}</h2>
-              <p className="mt-0.5 text-sm text-brand-muted">{booking.tour.location}</p>
-            </div>
-            <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-bold ring-1 ${status.className}`}>
+        <div className="flex flex-1 flex-col p-4 sm:p-6">
+          <div className="flex items-start justify-between gap-2">
+            <p className="font-mono text-[11px] font-bold text-brand-green sm:text-xs">{booking.bookingRef}</p>
+            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 sm:px-3 sm:text-[11px] ${status.className}`}>
               {status.label}
             </span>
           </div>
+          <h2 className="mt-2 text-base font-bold leading-snug text-brand-ink sm:mt-1 sm:text-lg">{booking.tour.name}</h2>
+          <p className="mt-1 text-sm leading-snug text-brand-muted">{booking.tour.location}</p>
 
           <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
             <div>
@@ -94,45 +108,68 @@ function BookingCard({ booking, index }) {
 
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-brand-border/40 pt-4">
             <span className="text-sm font-bold text-brand-ink">
-              {booking.paymentMode === "online"
-                ? formatCurrency(booking.payNowAmount)
-                : formatCurrency(booking.subtotal)}
-              <span className="ml-1 text-xs font-normal text-brand-muted">
-                {booking.paymentMode === "online"
-                  ? " paid online"
-                  : booking.paymentMode === "onsite"
-                    ? " due on site"
-                    : booking.paymentMode === "now" && booking.payType === "deposit"
-                      ? " deposit paid"
-                      : booking.paymentMode === "later"
-                        ? " total"
-                        : ""}
-              </span>
+              {amountLabel}
+              <span className="ml-1 text-xs font-normal text-brand-muted">{paymentNote}</span>
             </span>
+            {booking.bookingType === "group" ? (
+              <span className="rounded-full bg-brand-cream px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-muted">
+                Group
+              </span>
+            ) : null}
           </div>
 
-          {/* Premises notice */}
-          <div className="mt-3 flex items-start gap-2 rounded-lg bg-brand-gold/10 px-3 py-2.5">
-            <svg className="mt-0.5 h-4 w-4 shrink-0 text-brand-orange" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p className="text-[11px] leading-relaxed text-brand-muted">
-              Present your receipt at the premises upon arrival.
-            </p>
-          </div>
+          {booking.paymentMode === "onsite" && canViewReceipt ? (
+            <div className="mt-3 flex items-start gap-2 rounded-lg bg-brand-gold/10 px-3 py-2.5">
+              <svg className="mt-0.5 h-4 w-4 shrink-0 text-brand-orange" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-[11px] leading-relaxed text-brand-muted">
+                Present your receipt at the premises upon arrival.
+              </p>
+            </div>
+          ) : null}
 
           {/* Actions */}
           <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => downloadBookingReceipt(booking)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-green px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-brand-green-dark"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Download receipt
-            </button>
+            {canPayOnline ? (
+              <button
+                type="button"
+                onClick={() => onCompletePayment(booking)}
+                disabled={isPaying}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-brand-orange px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-brand-orange-dark disabled:opacity-60"
+              >
+                {isPaying ? "Starting checkout…" : "Complete payment"}
+              </button>
+            ) : null}
+            {canEdit && detailCode ? (
+              <Link
+                to={ROUTES.myBookingEdit(detailCode)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-brand-orange/30 bg-brand-orange/5 px-4 py-2 text-xs font-semibold text-brand-orange transition-all hover:border-brand-orange/50 hover:bg-brand-orange/10"
+              >
+                <Pencil className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                Edit booking
+              </Link>
+            ) : null}
+            {detailCode ? (
+              <Link
+                to={ROUTES.myBookingDetail(detailCode)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-brand-border bg-white px-4 py-2 text-xs font-semibold text-brand-ink transition-all hover:border-brand-green/30 hover:text-brand-green"
+              >
+                View details
+              </Link>
+            ) : null}
+            {canViewReceipt ? (
+              <button
+                type="button"
+                onClick={() => downloadBookingReceipt(booking)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-brand-green px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-brand-green-dark"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download receipt
+              </button>
+            ) : null}
             {slug && (
               <Link
                 to={ROUTES.tourDetail(slug)}
@@ -157,22 +194,49 @@ function BookingCard({ booking, index }) {
 }
 
 export default function MyBookingsPage() {
+  const { token } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const welcomeRef = searchParams.get("booked");
-  const [bookings, setBookings] = useState([]);
+  const [page, setPage] = useState(1);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [showWelcome, setShowWelcome] = useState(Boolean(welcomeRef));
+  const [payingRef, setPayingRef] = useState(null);
 
-  const loadBookings = useCallback(() => {
-    setBookings(getBookings());
-  }, []);
+  const {
+    data,
+    isFetching,
+    error: bookingsError,
+    refetch,
+  } = useClientBookings(token, { page, per_page: 15 });
 
-  useEffect(() => {
-    loadBookings();
-    window.addEventListener("afriqwest:bookings-updated", loadBookings);
-    return () => window.removeEventListener("afriqwest:bookings-updated", loadBookings);
-  }, [loadBookings]);
+  const bookings = data?.items ?? [];
+  const pagination = data?.pagination ?? null;
+  const loading = isFetching;
+  const error = bookingsError?.message ?? "";
+
+  const paginationMeta = useMemo(
+    () => mapServerPagination(pagination, { page }),
+    [pagination, page],
+  );
+
+  const handleCompletePayment = useCallback(async (booking) => {
+    if (!token) return;
+
+    const bookingCode = booking.bookingCode || booking.bookingRef;
+    setPayingRef(bookingCode);
+
+    const result = await consumerPaymentsServiceApi.retryPaymentForBooking(token, bookingCode);
+    setPayingRef(null);
+
+    const paymentUrl = extractPaymentRedirectUrl(result);
+    if (paymentUrl) {
+      window.location.assign(paymentUrl);
+      return;
+    }
+
+    toast.error(result.reason || result.message || "Could not start payment.");
+  }, [token]);
 
   useEffect(() => {
     if (!welcomeRef) return undefined;
@@ -184,11 +248,11 @@ export default function MyBookingsPage() {
   }, [welcomeRef, setSearchParams]);
 
   const stats = useMemo(() => ({
-    total: bookings.length,
+    total: paginationMeta.totalItems || bookings.length,
     upcoming: bookings.filter(isUpcoming).length,
     paid: bookings.filter((b) => b.status === "paid" || b.status === "deposit_paid").length,
     pending: bookings.filter((b) => b.status === "reserved" || b.status === "pay_onsite").length,
-  }), [bookings]);
+  }), [bookings, paginationMeta.totalItems]);
 
   const filtered = useMemo(() => {
     let list = bookings;
@@ -200,6 +264,7 @@ export default function MyBookingsPage() {
       list = list.filter(
         (b) =>
           b.bookingRef.toLowerCase().includes(q) ||
+          (b.bookingCode || "").toLowerCase().includes(q) ||
           b.tour.name.toLowerCase().includes(q) ||
           b.tour.country.toLowerCase().includes(q) ||
           b.selectedDate.toLowerCase().includes(q),
@@ -211,35 +276,45 @@ export default function MyBookingsPage() {
   return (
     <div className="min-h-screen bg-brand-cream">
 
-      {/* Hero */}
-      <section className="relative overflow-hidden bg-brand-green pb-12 pt-12 sm:pt-14">
-        <div aria-hidden className="pointer-events-none absolute inset-0 opacity-40" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg fill='none' transform='rotate(45 14 14)'%3E%3Crect width='14' height='14' fill='%23ffffff' fill-opacity='0.04'/%3E%3Crect x='14' y='14' width='14' height='14' fill='%23E3A020' fill-opacity='0.04'/%3E%3C/g%3E%3C/svg%3E\")", backgroundSize: "28px 28px" }} />
-        <div aria-hidden className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-brand-gold/10 blur-3xl" />
+      {/* Header */}
+      <section className="border-b border-brand-green/15 bg-brand-green">
+        <Container className="py-5 sm:py-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, ease: EASE }}
+            >
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-brand-gold">Your trips</p>
+              <h1 className="mt-0.5 text-xl font-bold text-white sm:text-2xl">My bookings</h1>
+            </motion.div>
 
-        <Container className="relative">
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: EASE }}>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-gold">Your trips</p>
-            <h1 className="mt-2 text-3xl font-bold text-white sm:text-4xl">My bookings</h1>
-            <p className="mt-2 max-w-xl text-sm leading-relaxed text-white/80">
-              All your AfriQwest tour reservations in one place. Download receipts and present them at the premises on arrival.
-            </p>
-          </motion.div>
+            <Link
+              to={ROUTES.myPayments}
+              className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/20 sm:self-auto"
+            >
+              Payment history →
+            </Link>
+          </div>
 
           <motion.div
-            initial={{ opacity: 0, y: 12 }}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: EASE, delay: 0.1 }}
-            className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4"
+            transition={{ duration: 0.45, ease: EASE, delay: 0.06 }}
+            className="mt-4 flex flex-wrap gap-2"
           >
             {[
-              { v: stats.total, l: "Total bookings" },
+              { v: stats.total, l: "Total" },
               { v: stats.upcoming, l: "Upcoming" },
               { v: stats.paid, l: "Confirmed" },
-              { v: stats.pending, l: "Pending payment" },
+              { v: stats.pending, l: "Pending" },
             ].map((s) => (
-              <div key={s.l} className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-sm">
-                <p className="text-2xl font-bold text-brand-gold">{s.v}</p>
-                <p className="text-[11px] text-white/70">{s.l}</p>
+              <div
+                key={s.l}
+                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 backdrop-blur-sm"
+              >
+                <span className="text-sm font-bold text-brand-gold">{s.v}</span>
+                <span className="text-[11px] text-white/75">{s.l}</span>
               </div>
             ))}
           </motion.div>
@@ -247,10 +322,19 @@ export default function MyBookingsPage() {
       </section>
 
       {/* List */}
-      <section className="px-4 py-10 sm:px-6 lg:px-8">
+      <section className="px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         <Container>
           <AnimatePresence>
-            {showWelcome && welcomeRef && (
+            {showWelcome && welcomeRef && (() => {
+              const welcomeBooking = bookings.find(
+                (b) =>
+                  b.bookingRef === welcomeRef ||
+                  b.bookingSlug === welcomeRef ||
+                  b.bookingCode === welcomeRef,
+              );
+              const welcomeHasReceipt = canViewBookingReceipt(welcomeBooking);
+
+              return (
               <motion.div
                 initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -264,22 +348,25 @@ export default function MyBookingsPage() {
                   <div>
                     <p className="font-bold text-brand-ink">Booking confirmed!</p>
                     <p className="mt-0.5 text-sm text-brand-muted">
-                      Reference <span className="font-mono font-semibold text-brand-green">{welcomeRef}</span> — your receipt has been downloaded. Present it on arrival.
+                      Reference <span className="font-mono font-semibold text-brand-green">{welcomeRef}</span>
+                      {welcomeHasReceipt
+                        ? " — your receipt is ready. Present it on arrival."
+                        : " — complete payment to download your receipt."}
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const booking = bookings.find((b) => b.bookingRef === welcomeRef);
-                    if (booking) downloadBookingReceipt(booking);
-                  }}
-                  className="shrink-0 rounded-xl bg-brand-green px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-green-dark"
-                >
-                  Download receipt again
-                </button>
+                {welcomeHasReceipt ? (
+                  <button
+                    type="button"
+                    onClick={() => welcomeBooking && downloadBookingReceipt(welcomeBooking)}
+                    className="shrink-0 rounded-xl bg-brand-green px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-green-dark"
+                  >
+                    Download receipt again
+                  </button>
+                ) : null}
               </motion.div>
-            )}
+              );
+            })()}
           </AnimatePresence>
 
           {/* Toolbar */}
@@ -319,10 +406,33 @@ export default function MyBookingsPage() {
             <span className="font-semibold text-brand-ink">{filtered.length}</span>
             {filtered.length === 1 ? " booking" : " bookings"}
             {filter !== "all" && <> · {FILTERS.find((f) => f.id === filter)?.label}</>}
+            {paginationMeta.totalItems > 0 && filter === "all" && !search.trim() ? (
+              <> · {paginationMeta.rangeStart}–{paginationMeta.rangeEnd} of {paginationMeta.totalItems}</>
+            ) : null}
           </p>
 
+          {error ? (
+            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+              {error}
+              <button
+                type="button"
+                onClick={() => refetch()}
+                className="ml-3 font-semibold underline hover:no-underline"
+              >
+                Try again
+              </button>
+            </div>
+          ) : null}
+
+          {loading ? (
+            <div className="mt-16 flex flex-col items-center justify-center gap-3 text-brand-muted">
+              <Loader2 className="h-8 w-8 animate-spin text-brand-green" strokeWidth={2} aria-hidden />
+              <p className="text-sm">Loading your bookings…</p>
+            </div>
+          ) : null}
+
           <AnimatePresence mode="wait">
-            {filtered.length > 0 ? (
+            {!loading && filtered.length > 0 ? (
               <motion.div
                 key={`${filter}-${search}`}
                 initial={{ opacity: 0 }}
@@ -331,10 +441,16 @@ export default function MyBookingsPage() {
                 className="mt-6 space-y-5"
               >
                 {filtered.map((booking, i) => (
-                  <BookingCard key={booking.bookingRef} booking={booking} index={i} />
+                  <BookingCard
+                    key={booking.bookingCode || booking.bookingRef}
+                    booking={booking}
+                    index={i}
+                    onCompletePayment={handleCompletePayment}
+                    payingRef={payingRef}
+                  />
                 ))}
               </motion.div>
-            ) : (
+            ) : !loading ? (
               <motion.div
                 key="empty"
                 initial={{ opacity: 0, y: 12 }}
@@ -343,7 +459,9 @@ export default function MyBookingsPage() {
                 className="mt-12 flex flex-col items-center rounded-[1.75rem] border border-brand-border/60 bg-white px-8 py-16 text-center shadow-sm"
               >
                 <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-green/10 text-3xl">🧳</div>
-                <h2 className="mt-5 text-xl font-bold text-brand-ink">No bookings yet</h2>
+                <h2 className="mt-5 text-xl font-bold text-brand-ink">
+                  {bookings.length === 0 ? "No bookings yet" : "No matching bookings"}
+                </h2>
                 <p className="mt-2 max-w-sm text-sm leading-relaxed text-brand-muted">
                   {bookings.length === 0
                     ? "When you book a tour, it will appear here with your receipt and departure details."
@@ -357,8 +475,32 @@ export default function MyBookingsPage() {
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>
                 </Link>
               </motion.div>
-            )}
+            ) : null}
           </AnimatePresence>
+
+          {!loading && paginationMeta.totalPages > 1 ? (
+            <nav aria-label="Bookings pagination" className="mt-10 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="rounded-xl border border-brand-border bg-white px-4 py-2 text-sm font-semibold text-brand-ink transition-all enabled:hover:border-brand-green/30 enabled:hover:text-brand-green disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span className="text-sm text-brand-muted">
+                Page <span className="font-semibold text-brand-ink">{page}</span> of {paginationMeta.totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page >= paginationMeta.totalPages}
+                onClick={() => setPage((p) => p + 1)}
+                className="rounded-xl border border-brand-border bg-white px-4 py-2 text-sm font-semibold text-brand-ink transition-all enabled:hover:border-brand-green/30 enabled:hover:text-brand-green disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </nav>
+          ) : null}
         </Container>
       </section>
     </div>

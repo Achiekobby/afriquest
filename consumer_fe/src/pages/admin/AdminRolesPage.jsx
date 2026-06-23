@@ -29,17 +29,14 @@ import {
   adminIconBtnViewClass,
 } from "../../components/admin/AdminResponsiveTable";
 import { useAuth } from "../../hooks/useAuth";
-import { useAdminPagination } from "../../hooks/useAdminPagination";
+import { useServerAdminPagination } from "../../hooks/useAdminPagination";
+import { buildListQueryParams, parsePaginatedList } from "../../utils/adminPaginationHelpers";
 
 const EASE = [0.22, 1, 0.36, 1];
 const TABS = [
   { id: "roles", label: "Roles", icon: Shield },
   { id: "permissions", label: "Permissions", icon: KeyRound },
 ];
-
-function normalizeList(data) {
-  return Array.isArray(data) ? data : [];
-}
 
 function PermissionBadge({ permission }) {
   return (
@@ -73,10 +70,14 @@ function PermissionsPanel({ token }) {
   const [editing, setEditing] = useState(null);
   const [label, setLabel] = useState("");
   const [fieldError, setFieldError] = useState("");
+  const pagination = useServerAdminPagination();
 
   const loadPermissions = useCallback(async () => {
     setLoading(true);
-    const result = await adminRolesServiceApi.listPermissions(token);
+    const result = await adminRolesServiceApi.listPermissions(
+      token,
+      buildListQueryParams({ page: pagination.page, per_page: pagination.pageSize })
+    );
     setLoading(false);
 
     if (!result.ok) {
@@ -84,8 +85,11 @@ function PermissionsPanel({ token }) {
       return;
     }
 
-    setPermissions(normalizeList(result.data));
-  }, [token]);
+    const { items, shouldRefetch } = pagination.syncFromResponse(result.data, pagination.page);
+    if (shouldRefetch) return;
+
+    setPermissions(items);
+  }, [token, pagination.page, pagination.pageSize, pagination.syncFromResponse]);
 
   useEffect(() => {
     loadPermissions();
@@ -158,7 +162,7 @@ function PermissionsPanel({ token }) {
     loadPermissions();
   }
 
-  const pagination = useAdminPagination(permissions);
+  const isEmpty = !loading && permissions.length === 0;
 
   return (
     <div className="space-y-5">
@@ -177,7 +181,7 @@ function PermissionsPanel({ token }) {
         <div className="flex items-center justify-center rounded-2xl border border-black/8 bg-white py-20">
           <Loader2 className="h-7 w-7 animate-spin text-brand-green" aria-hidden />
         </div>
-      ) : permissions.length === 0 ? (
+      ) : isEmpty ? (
         <EmptyState
           icon={KeyRound}
           title="No permissions yet"
@@ -192,7 +196,7 @@ function PermissionsPanel({ token }) {
       ) : (
         <>
           <AdminTableMobile columns={2}>
-            {pagination.paginatedItems.map((permission, index) => (
+            {permissions.map((permission, index) => (
               <motion.div
                 key={permission.id}
                 initial={{ opacity: 0, y: 6 }}
@@ -246,7 +250,7 @@ function PermissionsPanel({ token }) {
                 </tr>
               </thead>
               <tbody>
-                {pagination.paginatedItems.map((permission, index) => (
+                {permissions.map((permission, index) => (
                   <motion.tr
                     key={permission.id}
                     initial={{ opacity: 0, y: 6 }}
@@ -369,32 +373,48 @@ function RolesPanel({ token }) {
   const [name, setName] = useState("");
   const [selectedIds, setSelectedIds] = useState([]);
   const [fieldError, setFieldError] = useState("");
+  const pagination = useServerAdminPagination();
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    const [rolesResult, permissionsResult] = await Promise.all([
-      adminRolesServiceApi.listRoles(token),
-      adminRolesServiceApi.listPermissions(token),
-    ]);
-    setLoading(false);
+  const loadPermissionsForModal = useCallback(async () => {
+    const result = await adminRolesServiceApi.listPermissions(
+      token,
+      buildListQueryParams({ page: 1, per_page: 100 })
+    );
 
-    if (!rolesResult.ok) {
-      toast.error(rolesResult.reason || rolesResult.message);
+    if (!result.ok) {
+      toast.error(result.reason || result.message);
       return;
     }
 
-    if (!permissionsResult.ok) {
-      toast.error(permissionsResult.reason || permissionsResult.message);
-      return;
-    }
-
-    setRoles(normalizeList(rolesResult.data));
-    setPermissions(normalizeList(permissionsResult.data));
+    setPermissions(parsePaginatedList(result.data).items);
   }, [token]);
 
+  const loadRoles = useCallback(async () => {
+    setLoading(true);
+    const result = await adminRolesServiceApi.listRoles(
+      token,
+      buildListQueryParams({ page: pagination.page, per_page: pagination.pageSize })
+    );
+    setLoading(false);
+
+    if (!result.ok) {
+      toast.error(result.reason || result.message);
+      return;
+    }
+
+    const { items, shouldRefetch } = pagination.syncFromResponse(result.data, pagination.page);
+    if (shouldRefetch) return;
+
+    setRoles(items);
+  }, [token, pagination.page, pagination.pageSize, pagination.syncFromResponse]);
+
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadPermissionsForModal();
+  }, [loadPermissionsForModal]);
+
+  useEffect(() => {
+    loadRoles();
+  }, [loadRoles]);
 
   function openCreateModal() {
     setEditing(null);
@@ -456,7 +476,7 @@ function RolesPanel({ token }) {
 
     toast.success(result.reason || (editing ? "Role updated." : "Role created."));
     closeModal();
-    loadData();
+    loadRoles();
   }
 
   async function handleDelete() {
@@ -473,10 +493,10 @@ function RolesPanel({ token }) {
 
     toast.success(result.reason || "Role deleted.");
     setDeleteTarget(null);
-    loadData();
+    loadRoles();
   }
 
-  const pagination = useAdminPagination(roles);
+  const isEmpty = !loading && roles.length === 0;
 
   return (
     <div className="space-y-5">
@@ -495,7 +515,7 @@ function RolesPanel({ token }) {
         <div className="flex items-center justify-center rounded-2xl border border-black/8 bg-white py-20">
           <Loader2 className="h-7 w-7 animate-spin text-brand-green" aria-hidden />
         </div>
-      ) : roles.length === 0 ? (
+      ) : isEmpty ? (
         <EmptyState
           icon={Shield}
           title="No roles yet"
@@ -510,7 +530,7 @@ function RolesPanel({ token }) {
       ) : (
         <>
         <div className="grid gap-4 lg:grid-cols-2">
-          {pagination.paginatedItems.map((role, index) => (
+          {roles.map((role, index) => (
             <motion.article
               key={role.id}
               initial={{ opacity: 0, y: 10 }}

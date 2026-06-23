@@ -1,16 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
+import { Loader2, Luggage, Users } from "lucide-react";
+import { toast } from "react-toastify";
+import consumerBookingsServiceApi from "../../apis/ConsumerBookingsServiceApi";
+import publicListingsServiceApi from "../../apis/PublicListingsServiceApi";
 import Container from "../../components/layout/Container";
 import { ROUTES } from "../../constants/routes";
-import { getTourBySlug } from "../../data/toursData";
-import { downloadBookingReceipt } from "../../utils/bookingReceipt";
+import { useAuth } from "../../hooks/useAuth";
 import { saveBooking } from "../../utils/bookingStorage";
+import {
+  buildCreateBookingPayload,
+  buildBookingSuccessPath,
+  clampGroupTravelers,
+  computeBookingSubtotal,
+  createInitialBookingForm,
+  formatBookingCurrency,
+  getGroupTravelerLimits,
+  mapApiBookingToLocalRecord,
+  mergeUserIntoBookingLeadFields,
+  resolveTourUnitPrice,
+} from "../../utils/bookingHelpers";
 import {
   validateEmail,
   validatePhone,
   validateRequired,
 } from "../../utils/bookingValidation";
+
+const BOOKING_TYPE_OPTIONS = [
+  { id: "individual", label: "Individual booking", Icon: Luggage, desc: "Booking for yourself or one traveler on your behalf" },
+  { id: "group", label: "Group booking", Icon: Users, desc: "Universities, corporates, families, or organised groups" },
+];
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -28,121 +48,6 @@ const GROUP_TYPES = [
   { id: "family", label: "Family & Friends", icon: "👨‍👩‍👧‍👦", desc: "Private group of family or close friends" },
   { id: "other", label: "Other organisation", icon: "👥", desc: "Community, church, NGO, or custom group" },
 ];
-
-const MAX_GROUP_TRAVELERS = 200;
-const MIN_GROUP_TRAVELERS = 2;
-
-function clampGroupTravelers(count) {
-  const n = Number.parseInt(String(count), 10);
-  if (Number.isNaN(n)) return MIN_GROUP_TRAVELERS;
-  return Math.min(MAX_GROUP_TRAVELERS, Math.max(MIN_GROUP_TRAVELERS, n));
-}
-
-function formatCurrency(amount) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(amount);
-}
-
-function generateRef() {
-  return `AQW-${Date.now().toString(36).toUpperCase().slice(-8)}`;
-}
-
-const PAYMENT_LOADING_STEPS = [
-  { id: "connect", label: "Connecting to payment gateway" },
-  { id: "secure", label: "Establishing secure session" },
-  { id: "process", label: "Processing your payment" },
-  { id: "confirm", label: "Confirming your booking" },
-  { id: "receipt", label: "Generating your receipt" },
-];
-
-function PaymentProcessingView({ amount, activeStep, steps }) {
-  const progress = Math.min(100, Math.round((activeStep / steps.length) * 100));
-
-  return (
-    <motion.div
-      key="payment-processing"
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8 }}
-      transition={{ duration: 0.4, ease: EASE }}
-      className="rounded-[1.75rem] border border-brand-border/60 bg-white p-6 shadow-sm sm:p-10"
-    >
-      <div className="mx-auto max-w-md text-center">
-        <div className="relative mx-auto flex h-20 w-20 items-center justify-center">
-          <span className="absolute inset-0 animate-ping rounded-full bg-brand-green/15" />
-          <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-brand-green/10 ring-4 ring-brand-green/10">
-            <svg className="h-9 w-9 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-          </div>
-        </div>
-
-        <p className="mt-6 text-xs font-semibold uppercase tracking-[0.14em] text-brand-orange">Secure payment in progress</p>
-        <p className="mt-2 text-3xl font-bold text-brand-green">{formatCurrency(amount)}</p>
-        <p className="mt-1 text-sm text-brand-muted">Redirected to payment partner — please wait…</p>
-      </div>
-
-      <div className="mx-auto mt-8 max-w-md">
-        <div className="mb-2 flex justify-between text-[11px] font-semibold text-brand-muted">
-          <span>Progress</span>
-          <span>{progress}%</span>
-        </div>
-        <div className="h-2 overflow-hidden rounded-full bg-brand-border/50">
-          <motion.div
-            className="h-full rounded-full bg-brand-green"
-            initial={{ width: 0 }}
-            animate={{ width: `${progress}%` }}
-            transition={{ duration: 0.45, ease: EASE }}
-          />
-        </div>
-      </div>
-
-      <ul className="mx-auto mt-8 max-w-md space-y-2">
-        {steps.map((item, index) => {
-          const done = index < activeStep;
-          const active = index === activeStep && activeStep < steps.length;
-
-          return (
-            <motion.li
-              key={item.id}
-              initial={{ opacity: 0, x: -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.05 }}
-              className={[
-                "flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors",
-                active ? "border-brand-green/25 bg-brand-green/5" : "border-transparent bg-brand-cream/40",
-              ].join(" ")}
-            >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center">
-                {done ? (
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-green text-white">
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3} aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                  </span>
-                ) : active ? (
-                  <svg className="h-6 w-6 animate-spin text-brand-green" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-                    <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-                    <path d="M12 2a10 10 0 0 1 10 10" />
-                  </svg>
-                ) : (
-                  <span className="h-2.5 w-2.5 rounded-full bg-brand-border" />
-                )}
-              </span>
-              <span className={[
-                "text-sm",
-                active ? "font-semibold text-brand-ink" : done ? "text-brand-muted" : "text-brand-muted/60",
-              ].join(" ")}>
-                {item.label}
-              </span>
-            </motion.li>
-          );
-        })}
-      </ul>
-
-      <p className="mx-auto mt-8 max-w-sm text-center text-[11px] leading-relaxed text-brand-muted">
-        Please keep this tab open. You&apos;ll be redirected to your bookings once payment is confirmed.
-      </p>
-    </motion.div>
-  );
-}
 
 function StepProgress({ currentIndex }) {
   return (
@@ -197,6 +102,10 @@ function inputClass(error) {
 }
 
 function TourSummary({ tour, travelers, subtotal, selectedDate }) {
+  const departure = (tour.departureDates || []).find((dep) => dep.date === selectedDate);
+  const dateLabel = departure?.dateLabel || selectedDate;
+  const unitPrice = resolveTourUnitPrice(tour);
+
   return (
     <div className="overflow-hidden rounded-[1.5rem] border border-brand-border/60 bg-white shadow-[0_12px_40px_-24px_rgba(28,43,38,0.28)]">
       <div className="relative aspect-[16/10] overflow-hidden">
@@ -212,21 +121,21 @@ function TourSummary({ tour, travelers, subtotal, selectedDate }) {
           <span className="text-brand-muted">Duration</span>
           <span className="font-semibold text-brand-ink">{tour.duration}</span>
         </div>
-        {selectedDate && (
+        {selectedDate ? (
           <div className="flex justify-between">
             <span className="text-brand-muted">Departure</span>
-            <span className="font-semibold text-brand-ink">{selectedDate}</span>
+            <span className="font-semibold text-brand-ink">{dateLabel}</span>
           </div>
-        )}
+        ) : null}
         <div className="flex justify-between">
           <span className="text-brand-muted">Travelers</span>
           <span className="font-semibold text-brand-ink">{travelers}</span>
         </div>
         <div className="flex justify-between border-t border-brand-border/50 pt-3">
           <span className="font-semibold text-brand-ink">Estimated total</span>
-          <span className="text-lg font-bold text-brand-green">{formatCurrency(subtotal)}</span>
+          <span className="text-lg font-bold text-brand-green">{formatBookingCurrency(subtotal, tour.priceCurrency)}</span>
         </div>
-        <p className="text-[11px] text-brand-muted">{formatCurrency(tour.priceNum)} per person</p>
+        <p className="text-[11px] text-brand-muted">{formatBookingCurrency(unitPrice, tour.priceCurrency)} per person</p>
       </div>
     </div>
   );
@@ -235,16 +144,57 @@ function TourSummary({ tour, travelers, subtotal, selectedDate }) {
 export default function TourBookingPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const tour = getTourBySlug(slug);
+  const { token, user } = useAuth();
+  const [tour, setTour] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
 
   const [step, setStep] = useState("info");
   const [touched, setTouched] = useState({});
   const [processing, setProcessing] = useState(false);
-  const [paymentLoadStep, setPaymentLoadStep] = useState(0);
   const formTopRef = useRef(null);
   const isInitialStep = useRef(true);
-  const pendingBookingRef = useRef(null);
-  const paymentCompleteRef = useRef(false);
+
+  const [form, setForm] = useState(() => createInitialBookingForm(user));
+
+  useEffect(() => {
+    if (!user) return;
+    setForm((current) => mergeUserIntoBookingLeadFields(current, user));
+  }, [user]);
+
+  useEffect(() => {
+    if (!slug) return undefined;
+
+    let active = true;
+
+    async function loadTour() {
+      setLoading(true);
+      setNotFound(false);
+
+      const result = await publicListingsServiceApi.getListing(slug);
+      if (!active) return;
+
+      if (!result.ok || !result.tour) {
+        setTour(null);
+        setNotFound(true);
+        setLoading(false);
+        return;
+      }
+
+      setTour(result.tour);
+      setForm((current) => ({
+        ...current,
+        selectedDate: result.tour.departureDates?.[0]?.date ?? "",
+        travelers: Math.max(getGroupTravelerLimits(result.tour).min, current.travelers),
+      }));
+      setLoading(false);
+    }
+
+    loadTour();
+    return () => {
+      active = false;
+    };
+  }, [slug]);
 
   useEffect(() => {
     if (isInitialStep.current) {
@@ -254,24 +204,10 @@ export default function TourBookingPage() {
     formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [step]);
 
-  const [form, setForm] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    nationality: "",
-    bookingType: null,
-    selectedDate: tour?.departureDates?.[0]?.date ?? tour?.nextDate ?? "",
-    travelers: 1,
-    groupName: "",
-    groupType: "",
-    organization: "",
-    specialRequests: "",
-    dietaryNeeds: "",
-    paymentMode: null,
-  });
-
-  const subtotal = tour ? tour.priceNum * (form.bookingType === "group" ? clampGroupTravelers(form.travelers) : form.travelers) : 0;
+  const groupLimits = useMemo(() => getGroupTravelerLimits(tour), [tour]);
+  const travelerCount =
+    form.bookingType === "group" ? clampGroupTravelers(form.travelers, tour) : 1;
+  const subtotal = tour ? computeBookingSubtotal(tour, travelerCount) : 0;
 
   const errors = useMemo(() => ({
     firstName: validateRequired(form.firstName, "First name"),
@@ -281,17 +217,17 @@ export default function TourBookingPage() {
     bookingType: !form.bookingType ? "Select individual or group booking" : "",
     selectedDate: !form.selectedDate ? "Select a departure date" : "",
     travelers:
-      form.bookingType === "group" && form.travelers < MIN_GROUP_TRAVELERS
-        ? "Group bookings need at least 2 travelers"
-        : form.bookingType === "group" && form.travelers > MAX_GROUP_TRAVELERS
-          ? `Maximum ${MAX_GROUP_TRAVELERS} travelers per booking`
+      form.bookingType === "group" && form.travelers < groupLimits.min
+        ? `Group bookings need at least ${groupLimits.min} travelers`
+        : form.bookingType === "group" && form.travelers > groupLimits.max
+          ? `Maximum ${groupLimits.max} travelers per booking`
           : form.travelers < 1
             ? "At least 1 traveler required"
             : "",
     groupName: form.bookingType === "group" ? validateRequired(form.groupName, "Group name") : "",
     groupType: form.bookingType === "group" && !form.groupType ? "Select a group type" : "",
     paymentMode: !form.paymentMode ? "Choose how you would like to pay" : "",
-  }), [form]);
+  }), [form, groupLimits]);
 
   const stepIndex = useMemo(() => {
     if (step === "info") return 0;
@@ -300,8 +236,6 @@ export default function TourBookingPage() {
     if (step === "payment") return 3;
     return 4;
   }, [step]);
-
-  const isPaymentProcessing = step === "payment-processing";
 
   const update = useCallback((field, value) => {
     setForm((f) => ({ ...f, [field]: value }));
@@ -340,77 +274,40 @@ export default function TourBookingPage() {
 
   function handleGroupTravelersBlur() {
     touch("travelers");
-    update("travelers", clampGroupTravelers(form.travelers));
+    update("travelers", clampGroupTravelers(form.travelers, tour));
   }
 
   function adjustGroupTravelers(delta) {
-    update("travelers", clampGroupTravelers(form.travelers + delta));
+    update("travelers", clampGroupTravelers(form.travelers + delta, tour));
   }
 
-  const buildBookingData = useCallback((ref, overrides = {}) => {
-    return {
-      bookingRef: ref,
-      bookingType: form.bookingType,
-      tour: {
-        name: tour.name,
-        slug: tour.slug,
-        location: tour.location,
-        country: tour.country,
-        duration: tour.duration,
-        priceNum: tour.priceNum,
-        image: tour.image,
-      },
-      selectedDate: form.selectedDate,
-      travelers: form.bookingType === "group" ? clampGroupTravelers(form.travelers) : form.travelers,
-      paymentMode: form.paymentMode,
-      payType: form.paymentMode === "online" ? "full" : "onsite",
-      payNowAmount: form.paymentMode === "online" ? subtotal : 0,
-      subtotal,
-      depositAmount: Math.round(subtotal * (tour.depositPercent / 100)),
-      payLaterHoldHours: tour.payLaterHoldHours,
-      depositPercent: tour.depositPercent,
-      leadTraveler: {
-        firstName: form.firstName,
-        lastName: form.lastName,
-        email: form.email,
-        phone: form.phone,
-        nationality: form.nationality,
-      },
-      groupDetails: form.bookingType === "group" ? {
-        groupName: form.groupName,
-        groupType: form.groupType,
-        organization: form.organization,
-      } : null,
-      specialRequests: form.specialRequests,
-      dietaryNeeds: form.dietaryNeeds,
-      additionalTravelers: [],
-      issuedAt: new Date().toISOString(),
-      ...overrides,
-    };
-  }, [form, tour, subtotal]);
+  const ensureAuthenticated = useCallback(() => {
+    if (token) return true;
+    toast.info("Please sign in to complete your booking.");
+    navigate(ROUTES.login, { state: { from: { pathname: ROUTES.tourBook(slug) } } });
+    return false;
+  }, [navigate, slug, token]);
 
-  const completeBooking = useCallback((ref) => {
-    const data = buildBookingData(ref);
-    saveBooking(data);
-    downloadBookingReceipt(data);
-    navigate(`${ROUTES.myBookings}?booked=${ref}`, { replace: true });
-  }, [buildBookingData, navigate]);
+  const submitBookingToApi = useCallback(async () => {
+    const payload = buildCreateBookingPayload(form, tour);
+    payload.amount = computeBookingSubtotal(tour, travelerCount);
 
-  useEffect(() => {
-    if (step !== "payment-processing") return undefined;
+    const result = await consumerBookingsServiceApi.createBooking(token, payload);
 
-    if (paymentLoadStep >= PAYMENT_LOADING_STEPS.length) {
-      if (paymentCompleteRef.current) return undefined;
-      paymentCompleteRef.current = true;
-      const ref = pendingBookingRef.current;
-      if (ref) completeBooking(ref);
-      return undefined;
+    if (!result.ok || !result.booking) {
+      toast.error(result.reason || result.message || "Could not submit booking.");
+      return null;
     }
 
-    const delay = paymentLoadStep === 0 ? 700 : paymentLoadStep === PAYMENT_LOADING_STEPS.length - 1 ? 1100 : 900;
-    const timer = window.setTimeout(() => setPaymentLoadStep((s) => s + 1), delay);
-    return () => window.clearTimeout(timer);
-  }, [step, paymentLoadStep, completeBooking]);
+    return result;
+  }, [form, tour, token, travelerCount]);
+
+  const finalizeBooking = useCallback((apiBooking, paymentMode = "onsite") => {
+    const record = mapApiBookingToLocalRecord(apiBooking, form, tour);
+    saveBooking(record);
+    toast.success("Booking submitted.");
+    navigate(buildBookingSuccessPath(apiBooking.bookingCode || apiBooking.bookingSlug, paymentMode), { replace: true });
+  }, [form, navigate, tour]);
 
   function handleInfoNext(e) {
     e.preventDefault();
@@ -424,14 +321,14 @@ export default function TourBookingPage() {
     if (!canProceedType()) return;
     setForm((f) => ({
       ...f,
-      travelers: f.bookingType === "individual" ? 1 : Math.max(2, f.travelers),
+      travelers: f.bookingType === "individual" ? 1 : Math.max(groupLimits.min, f.travelers),
     }));
     setStep("details");
   }
 
   function handleDetailsNext(e) {
     e.preventDefault();
-    const travelers = form.bookingType === "group" ? clampGroupTravelers(form.travelers) : 1;
+    const travelers = form.bookingType === "group" ? clampGroupTravelers(form.travelers, tour) : 1;
     const fields = ["selectedDate", "travelers"];
     if (form.bookingType === "group") fields.push("groupName", "groupType");
     touchFields(fields);
@@ -442,7 +339,7 @@ export default function TourBookingPage() {
       setStep("payment");
       return;
     }
-    if (!form.groupName || !form.groupType || travelers < MIN_GROUP_TRAVELERS) return;
+    if (!form.groupName || !form.groupType || travelers < groupLimits.min) return;
 
     setForm((f) => ({ ...f, travelers }));
     setStep("payment");
@@ -453,29 +350,59 @@ export default function TourBookingPage() {
     setStep("checkout");
   }
 
-  function handleOnlinePayment(e) {
+  async function handleOnlinePayment(e) {
     e.preventDefault();
-    pendingBookingRef.current = generateRef();
-    paymentCompleteRef.current = false;
-    setPaymentLoadStep(0);
-    setStep("payment-processing");
+    if (!ensureAuthenticated()) return;
+    if (processing) return;
 
-    // Payment gateway integration point — on return from gateway, resume with pendingBookingRef
-    // e.g. window.location.href = `${PAYMENT_GATEWAY_URL}?ref=${pendingBookingRef.current}&amount=${subtotal}`;
-  }
-
-  function handleOnsiteConfirm(e) {
-    e.preventDefault();
     setProcessing(true);
-    const ref = generateRef();
 
-    setTimeout(() => {
+    try {
+      const result = await submitBookingToApi();
+      if (!result?.booking) {
+        setProcessing(false);
+        return;
+      }
+
+      const record = mapApiBookingToLocalRecord(result.booking, form, tour);
+      saveBooking(record);
+
+      const paymentUrl = result.paymentUrl || result.booking?.paymentUrl;
+      if (paymentUrl) {
+        window.location.assign(paymentUrl);
+        return;
+      }
+
       setProcessing(false);
-      completeBooking(ref);
-    }, 1400);
+      toast.error("Payment link unavailable. You can complete payment from My bookings.");
+      navigate(buildBookingSuccessPath(result.booking.bookingCode || result.booking.bookingSlug, "online"), { replace: true });
+    } catch {
+      setProcessing(false);
+      toast.error("Could not start checkout. Please try again.");
+    }
   }
 
-  if (!tour) return <Navigate to={ROUTES.tours} replace />;
+  async function handleOnsiteConfirm(e) {
+    e.preventDefault();
+    if (!ensureAuthenticated()) return;
+
+    setProcessing(true);
+    const result = await submitBookingToApi();
+    setProcessing(false);
+    if (!result?.booking) return;
+
+    finalizeBooking(result.booking, "onsite");
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[320px] items-center justify-center bg-brand-cream">
+        <Loader2 className="h-8 w-8 animate-spin text-brand-green" strokeWidth={2} aria-hidden />
+      </div>
+    );
+  }
+
+  if (notFound || !tour) return <Navigate to={ROUTES.tours} replace />;
 
   return (
     <div className="min-h-screen bg-brand-cream pb-16">
@@ -499,7 +426,6 @@ export default function TourBookingPage() {
       </div>
 
       <Container className="mt-8">
-        <div className="mx-auto max-w-5xl">
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: EASE }}>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-orange">Secure booking</p>
             <h1 className="mt-1.5 text-2xl font-bold text-brand-ink sm:text-3xl">Book your tour</h1>
@@ -572,26 +498,35 @@ export default function TourBookingPage() {
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2">
-                      {[
-                        { id: "individual", label: "Individual booking", icon: "🧳", desc: "Booking for yourself or one traveler on your behalf" },
-                        { id: "group", label: "Group booking", icon: "👥", desc: "Universities, corporates, families, or organised groups" },
-                      ].map((opt) => (
+                      {BOOKING_TYPE_OPTIONS.map((opt) => {
+                        const selected = form.bookingType === opt.id;
+                        const Icon = opt.Icon;
+
+                        return (
                         <button
                           key={opt.id}
                           type="button"
                           onClick={() => update("bookingType", opt.id)}
                           className={[
                             "flex flex-col items-start gap-3 rounded-2xl border-2 p-5 text-left transition-all",
-                            form.bookingType === opt.id ? "border-brand-green bg-brand-green/5 ring-2 ring-brand-green/15" : "border-brand-border/70 hover:border-brand-green/40",
+                            selected ? "border-brand-green bg-brand-green/5 ring-2 ring-brand-green/15" : "border-brand-border/70 hover:border-brand-green/40",
                           ].join(" ")}
                         >
-                          <span className="text-3xl">{opt.icon}</span>
+                          <span
+                            className={[
+                              "flex h-11 w-11 items-center justify-center rounded-xl transition-colors",
+                              selected ? "bg-brand-green/10 text-brand-green" : "bg-brand-cream text-brand-muted",
+                            ].join(" ")}
+                          >
+                            <Icon className="h-5 w-5" strokeWidth={1.5} aria-hidden />
+                          </span>
                           <div>
                             <p className="font-bold text-brand-ink">{opt.label}</p>
                             <p className="mt-1 text-xs leading-relaxed text-brand-muted">{opt.desc}</p>
                           </div>
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                     {showError("bookingType") && <p className="text-[11px] font-medium text-red-500">{errors.bookingType}</p>}
 
@@ -661,7 +596,7 @@ export default function TourBookingPage() {
                           <div className="flex flex-wrap items-center gap-3">
                             <button
                               type="button"
-                              disabled={form.travelers <= MIN_GROUP_TRAVELERS}
+                              disabled={form.travelers <= groupLimits.min}
                               onClick={() => adjustGroupTravelers(-1)}
                               className="flex h-10 w-10 items-center justify-center rounded-full border border-brand-border text-lg font-bold transition-all hover:border-brand-green disabled:opacity-40"
                               aria-label="Decrease travelers"
@@ -671,8 +606,8 @@ export default function TourBookingPage() {
                             <input
                               id="travelers"
                               type="number"
-                              min={MIN_GROUP_TRAVELERS}
-                              max={MAX_GROUP_TRAVELERS}
+                              min={groupLimits.min}
+                              max={groupLimits.max}
                               inputMode="numeric"
                               value={form.travelers}
                               onChange={(e) => handleGroupTravelersChange(e.target.value)}
@@ -682,14 +617,14 @@ export default function TourBookingPage() {
                             />
                             <button
                               type="button"
-                              disabled={form.travelers >= MAX_GROUP_TRAVELERS}
+                              disabled={form.travelers >= groupLimits.max}
                               onClick={() => adjustGroupTravelers(1)}
                               className="flex h-10 w-10 items-center justify-center rounded-full border border-brand-border text-lg font-bold transition-all hover:border-brand-green disabled:opacity-40"
                               aria-label="Increase travelers"
                             >
                               +
                             </button>
-                            <span className="text-xs text-brand-muted">Min {MIN_GROUP_TRAVELERS} · up to {MAX_GROUP_TRAVELERS}</span>
+                            <span className="text-xs text-brand-muted">Min {groupLimits.min} · up to {groupLimits.max}</span>
                           </div>
                         </FormField>
                       </>
@@ -698,7 +633,7 @@ export default function TourBookingPage() {
                     <div>
                       <p className="text-xs font-semibold text-brand-ink">Preferred departure date <span className="text-brand-orange">*</span></p>
                       <div className="mt-3 space-y-2">
-                        {tour.departureDates.map((dep) => (
+                        {(tour.departureDates || []).length > 0 ? tour.departureDates.map((dep) => (
                           <button
                             key={dep.date}
                             type="button"
@@ -709,12 +644,18 @@ export default function TourBookingPage() {
                             ].join(" ")}
                           >
                             <div>
-                              <p className="text-sm font-semibold text-brand-ink">{dep.date}</p>
+                              <p className="text-sm font-semibold text-brand-ink">{dep.dateLabel || dep.date}</p>
                               <p className="text-xs text-brand-muted">{dep.label}</p>
                             </div>
-                            <span className={`text-xs font-bold ${dep.spots <= 3 ? "text-red-500" : "text-brand-green"}`}>{dep.spots} spots left</span>
+                            <span className={`text-xs font-bold ${(dep.spotsLeft ?? dep.spotsTotal ?? 0) <= 3 ? "text-red-500" : "text-brand-green"}`}>
+                              {dep.spotsLeft ?? dep.spotsTotal ?? 0} spots left
+                            </span>
                           </button>
-                        ))}
+                        )) : (
+                          <p className="rounded-xl border border-brand-border/70 bg-brand-cream/50 px-4 py-3 text-sm text-brand-muted">
+                            No scheduled departures yet. Contact us for availability.
+                          </p>
+                        )}
                       </div>
                       {showError("selectedDate") && <p className="mt-2 text-[11px] font-medium text-red-500">{errors.selectedDate}</p>}
                     </div>
@@ -762,6 +703,7 @@ export default function TourBookingPage() {
                       <p className="mt-1 text-sm text-brand-muted">Choose online payment or pay when you arrive on site.</p>
                     </div>
 
+                    {tour.onlinePaymentAllowed !== false ? (
                     <button
                       type="button"
                       onClick={() => handlePaymentSelect("online")}
@@ -773,11 +715,13 @@ export default function TourBookingPage() {
                       <div className="flex-1">
                         <p className="font-bold text-brand-ink group-hover:text-brand-green">Pay online</p>
                         <p className="mt-1 text-xs leading-relaxed text-brand-muted">Redirect to our secure payment gateway — card details handled entirely off-site.</p>
-                        <p className="mt-2 text-sm font-bold text-brand-green">{formatCurrency(subtotal)}</p>
+                        <p className="mt-2 text-sm font-bold text-brand-green">{formatBookingCurrency(subtotal, tour.priceCurrency)}</p>
                       </div>
                       <svg className="mt-1 h-5 w-5 shrink-0 text-brand-muted group-hover:text-brand-green" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                     </button>
+                    ) : null}
 
+                    {tour.payOnSiteAllowed !== false ? (
                     <button
                       type="button"
                       onClick={() => handlePaymentSelect("onsite")}
@@ -793,19 +737,12 @@ export default function TourBookingPage() {
                       </div>
                       <svg className="mt-1 h-5 w-5 shrink-0 text-brand-muted group-hover:text-brand-orange" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                     </button>
+                    ) : null}
 
                     <div className="flex justify-start pt-2">
                       <button type="button" onClick={() => setStep("details")} className="text-sm font-semibold text-brand-muted hover:text-brand-ink">← Back</button>
                     </div>
                   </motion.div>
-                )}
-
-                {isPaymentProcessing && (
-                  <PaymentProcessingView
-                    amount={subtotal}
-                    activeStep={paymentLoadStep}
-                    steps={PAYMENT_LOADING_STEPS}
-                  />
                 )}
 
                 {step === "checkout" && form.paymentMode === "online" && (
@@ -834,7 +771,7 @@ export default function TourBookingPage() {
                       </div>
                       <div className="flex justify-between border-t border-brand-border/50 pt-2">
                         <span className="font-semibold text-brand-ink">Total due</span>
-                        <span className="text-xl font-bold text-brand-green">{formatCurrency(subtotal)}</span>
+                        <span className="text-xl font-bold text-brand-green">{formatBookingCurrency(subtotal, tour.priceCurrency)}</span>
                       </div>
                     </div>
 
@@ -848,7 +785,7 @@ export default function TourBookingPage() {
                         <div>
                           <p className="text-sm font-bold text-brand-ink">You&apos;ll be redirected to our payment gateway</p>
                           <p className="mt-1 text-xs leading-relaxed text-brand-muted">
-                            AfriQwest never stores card details. Payment of {formatCurrency(subtotal)} is processed securely by our payment partner. Confirmation is sent to <strong className="text-brand-ink">{form.email}</strong>.
+                            AfriQwest never stores card details. Payment of {formatBookingCurrency(subtotal, tour.priceCurrency)} is processed securely by our payment partner. Confirmation is sent to <strong className="text-brand-ink">{form.email}</strong>.
                           </p>
                         </div>
                       </div>
@@ -857,14 +794,34 @@ export default function TourBookingPage() {
                     <ul className="space-y-2 text-xs text-brand-muted">
                       <li className="flex items-center gap-2"><span className="text-brand-green">✓</span> 256-bit encrypted checkout</li>
                       <li className="flex items-center gap-2"><span className="text-brand-green">✓</span> Instant booking confirmation on success</li>
-                      <li className="flex items-center gap-2"><span className="text-brand-green">✓</span> Downloadable receipt for your records</li>
+                      <li className="flex items-center gap-2"><span className="text-brand-green">✓</span> Receipt available after successful payment</li>
                     </ul>
 
                     <div className="flex justify-between pt-2">
-                      <button type="button" onClick={() => setStep("payment")} className="text-sm font-semibold text-brand-muted hover:text-brand-ink">← Back</button>
-                      <button type="submit" className="flex items-center gap-2 rounded-xl bg-brand-green px-8 py-3 text-sm font-semibold text-white shadow-md hover:bg-brand-green-dark">
-                        Continue to secure checkout
-                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                      <button
+                        type="button"
+                        onClick={() => setStep("payment")}
+                        disabled={processing}
+                        className="text-sm font-semibold text-brand-muted hover:text-brand-ink disabled:opacity-50"
+                      >
+                        ← Back
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={processing}
+                        className="inline-flex items-center gap-2 rounded-xl bg-brand-green px-8 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-brand-green-dark disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {processing ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} aria-hidden />
+                            Starting checkout…
+                          </>
+                        ) : (
+                          <>
+                            Continue to secure checkout
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                          </>
+                        )}
                       </button>
                     </div>
                   </motion.form>
@@ -889,15 +846,14 @@ export default function TourBookingPage() {
                       <p className="font-bold text-brand-ink">What happens next</p>
                       <ul className="mt-3 space-y-2.5 text-sm text-brand-muted">
                         <li className="flex items-start gap-2"><span className="text-brand-green">✓</span> Instant reservation confirmation emailed to {form.email || "you"}</li>
-                        <li className="flex items-start gap-2"><span className="text-brand-green">✓</span> Downloadable receipt with your booking reference</li>
-                        <li className="flex items-start gap-2"><span className="text-brand-green">✓</span> Pay {formatCurrency(subtotal)} at tour check-in or our office</li>
-                        <li className="flex items-start gap-2"><span className="text-brand-green">✓</span> Present receipt on arrival at the premises</li>
+                        <li className="flex items-start gap-2"><span className="text-brand-green">✓</span> Receipt available after payment is completed</li>
+                        <li className="flex items-start gap-2"><span className="text-brand-green">✓</span> Pay {formatBookingCurrency(subtotal, tour.priceCurrency)} at tour check-in or our office</li>
                       </ul>
                     </div>
 
                     <div className="rounded-xl border border-brand-border/60 bg-brand-cream/50 p-4 text-sm space-y-2">
-                      <div className="flex justify-between"><span className="text-brand-muted">Tour total</span><span className="font-bold text-brand-ink">{formatCurrency(subtotal)}</span></div>
-                      <div className="flex justify-between"><span className="text-brand-muted">Due today</span><span className="font-bold text-brand-orange">$0 — pay on site</span></div>
+                      <div className="flex justify-between"><span className="text-brand-muted">Tour total</span><span className="font-bold text-brand-ink">{formatBookingCurrency(subtotal, tour.priceCurrency)}</span></div>
+                      <div className="flex justify-between"><span className="text-brand-muted">Due today</span><span className="font-bold text-brand-orange">{formatBookingCurrency(0, tour.priceCurrency)} — pay on site</span></div>
                     </div>
 
                     <div className="flex justify-between pt-2">
@@ -912,7 +868,7 @@ export default function TourBookingPage() {
             </div>
 
             <div className="lg:sticky lg:top-[88px] lg:self-start">
-              <TourSummary tour={tour} travelers={form.travelers} subtotal={subtotal} selectedDate={form.selectedDate} />
+              <TourSummary tour={tour} travelers={travelerCount} subtotal={subtotal} selectedDate={form.selectedDate} />
               {form.bookingType === "group" && form.groupName && (
                 <p className="mt-3 text-center text-xs text-brand-muted">
                   Group: <span className="font-semibold text-brand-ink">{form.groupName}</span>
@@ -920,7 +876,6 @@ export default function TourBookingPage() {
               )}
             </div>
           </div>
-        </div>
       </Container>
     </div>
   );

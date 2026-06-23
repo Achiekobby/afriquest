@@ -22,7 +22,7 @@ import {
 import PlatformHealthDonut from "../../components/admin/PlatformHealthDonut";
 import AdminActivePermissionsCard from "../../components/admin/AdminActivePermissionsCard";
 import AdminPagination from "../../components/admin/AdminPagination";
-import { useAdminPagination } from "../../hooks/useAdminPagination";
+import { useLocalAdminPagination } from "../../hooks/useAdminPagination";
 import { countBookingsByHealthCategory } from "../../utils/bookingHealthMetrics";
 import { getOperatorTours } from "../../utils/operatorTourStorage";
 
@@ -121,7 +121,7 @@ export default function AdminDashboardPage() {
   const publishedTours = tours.filter((t) => t.status === "published").length;
   const bookingHealth = countBookingsByHealthCategory(bookings);
   const allBookings = useMemo(() => [...bookings].reverse(), [bookings]);
-  const bookingsPagination = useAdminPagination(allBookings);
+  const bookingsPagination = useLocalAdminPagination(allBookings);
 
   return (
     <div className="space-y-8">

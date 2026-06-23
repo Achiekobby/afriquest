@@ -4,11 +4,12 @@ import { motion, AnimatePresence } from "motion/react";
 import { Mail } from "lucide-react";
 import { toast } from "react-toastify";
 import { ROUTES } from "../../constants/routes";
-import { getGuestLandingRoute, USER_ROLES } from "../../constants/roles";
+import { resolvePostAuthRedirect, USER_ROLES } from "../../constants/roles";
 import { useAuth } from "../../hooks/useAuth";
 import { images } from "../../config/images";
 import OtpInput from "../../components/misc/OtpInput";
 import consumerAuthServiceApi from "../../apis/ConsumerAuthServiceApi";
+import { normalizeEmailOrPhoneForApi } from "../../utils/phoneUtils";
 
 const EASE = [0.16, 1, 0.3, 1];
 const RESEND_COOLDOWN_BY_TYPE = {
@@ -22,9 +23,10 @@ export default function VerifyAccountPage() {
   const location = useLocation();
 
   const emailOrPhone = location.state?.emailOrPhone || "";
+  const contactForApi = normalizeEmailOrPhoneForApi(emailOrPhone);
   const verifyType = location.state?.verifyType || "login";
   const initialHint = location.state?.reason || "";
-  const redirectTo = location.state?.from?.pathname;
+  const redirectTo = location.state?.from;
   const resendCooldownSeconds = RESEND_COOLDOWN_BY_TYPE[verifyType] ?? 15;
 
   const isRegistration = verifyType === "registration";
@@ -45,7 +47,7 @@ export default function VerifyAccountPage() {
   }, [resendCooldown]);
 
   if (isAuthenticated && isVerified) {
-    return <Navigate to={getGuestLandingRoute(user?.role)} replace />;
+    return <Navigate to={resolvePostAuthRedirect(redirectTo, user?.role)} replace />;
   }
 
   if (!emailOrPhone) {
@@ -63,7 +65,7 @@ export default function VerifyAccountPage() {
     setOtpError("");
 
     const result = await consumerAuthServiceApi.verifyOtp({
-      emailOrPhone,
+      emailOrPhone: contactForApi,
       otp,
       type: verifyType,
     });
@@ -79,9 +81,7 @@ export default function VerifyAccountPage() {
     toast.success(
       result.reason || (isRegistration ? "Welcome to AfriQwest!" : "Account verified — welcome back!")
     );
-    const destination =
-      !isRegistration && redirectTo ? redirectTo : getGuestLandingRoute(USER_ROLES.TOURIST);
-    navigate(destination, { replace: true });
+    navigate(resolvePostAuthRedirect(redirectTo, USER_ROLES.TOURIST), { replace: true });
   }
 
   async function handleResend() {
@@ -91,7 +91,7 @@ export default function VerifyAccountPage() {
     setOtpError("");
     setOtp("");
 
-    const result = await consumerAuthServiceApi.resendOtp({ emailOrPhone });
+    const result = await consumerAuthServiceApi.resendOtp({ emailOrPhone: contactForApi });
     setLoading(false);
 
     if (!result.ok) {

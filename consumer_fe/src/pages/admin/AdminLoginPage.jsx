@@ -5,6 +5,7 @@ import { Mail, Phone, ShieldCheck } from "lucide-react";
 import { toast } from "react-toastify";
 import OtpInput from "../../components/misc/OtpInput";
 import adminAuthServiceApi from "../../apis/AdminAuthServiceApi";
+import { normalizeEmailOrPhoneForApi } from "../../utils/phoneUtils";
 import { images } from "../../config/images";
 import { ROUTES } from "../../constants/routes";
 import { getHomeRouteForRole, USER_ROLES } from "../../constants/roles";
@@ -70,8 +71,8 @@ export default function AdminLoginPage() {
   }
 
   async function requestOtp() {
-    const trimmed = emailOrPhone.trim();
-    const result = await adminAuthServiceApi.loginAdmin({ emailOrPhone: trimmed });
+    const contactForApi = normalizeEmailOrPhoneForApi(emailOrPhone);
+    const result = await adminAuthServiceApi.loginAdmin({ emailOrPhone: contactForApi });
 
     if (!result.ok) {
       setFieldError(result.reason || result.message);
@@ -117,8 +118,10 @@ export default function AdminLoginPage() {
     setLoading(true);
     setOtpError("");
 
+    const contactForApi = normalizeEmailOrPhoneForApi(emailOrPhone);
+
     const result = await adminAuthServiceApi.verifyOtp({
-      emailOrPhone: emailOrPhone.trim(),
+      emailOrPhone: contactForApi,
       otp,
       type: "login",
     });
@@ -142,8 +145,10 @@ export default function AdminLoginPage() {
     setOtp("");
     setOtpError("");
 
+    const contactForApi = normalizeEmailOrPhoneForApi(emailOrPhone);
+
     const result = await adminAuthServiceApi.resendOtp({
-      emailOrPhone: emailOrPhone.trim(),
+      emailOrPhone: contactForApi,
       type: "login",
     });
 

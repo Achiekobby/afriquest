@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { motion } from "motion/react";
 import { Eye, Loader2, MessageSquare, Search, Trash2 } from "lucide-react";
@@ -20,7 +20,8 @@ import {
 } from "../../components/admin/AdminResponsiveTable";
 import { ROUTES } from "../../constants/routes";
 import { useAuth } from "../../hooks/useAuth";
-import { useAdminPagination } from "../../hooks/useAdminPagination";
+import { useDebouncedValue, useServerAdminPagination } from "../../hooks/useAdminPagination";
+import { buildListQueryParams } from "../../utils/adminPaginationHelpers";
 import {
   CONTACT_STATUS_STYLES,
   formatContactDate,
@@ -38,7 +39,15 @@ function StatusBadge({ status }) {
   );
 }
 
-function ContactStatusSelect({ contact, updating, onUpdate }) {
+function TypeBadge({ type }) {
+  return (
+    <span className="inline-flex max-w-full items-center whitespace-nowrap rounded-full bg-violet-500/10 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
+      {formatContactLabel(type)}
+    </span>
+  );
+}
+
+function ContactStatusSelect({ contact, updating, onUpdate, compact = false }) {
   const isUpdating = updating === contact.id;
 
   return (
@@ -51,9 +60,14 @@ function ContactStatusSelect({ contact, updating, onUpdate }) {
         e.target.value = "";
       }}
       aria-label={`Update status for ${contact.fullname}`}
-      className="max-w-[9.5rem] rounded-xl border-2 border-brand-border bg-white px-2.5 py-2 text-xs font-semibold text-brand-ink outline-none transition-all focus:border-brand-green focus:ring-2 focus:ring-brand-green/15 disabled:cursor-not-allowed disabled:opacity-60"
+      className={[
+        "shrink-0 rounded-lg border border-brand-border bg-white font-semibold text-brand-ink outline-none transition-all focus:border-brand-green focus:ring-2 focus:ring-brand-green/15 disabled:cursor-not-allowed disabled:opacity-60",
+        compact
+          ? "h-9 min-w-[6.75rem] max-w-[7.5rem] px-2 py-0 text-[11px]"
+          : "max-w-[9.5rem] rounded-xl border-2 px-2.5 py-2 text-xs",
+      ].join(" ")}
     >
-      <option value="">{isUpdating ? "Updating…" : "Set status"}</option>
+      <option value="">{isUpdating ? "Updating…" : "Status"}</option>
       {UPDATABLE_CONTACT_STATUSES.filter((option) => option.value !== contact.status).map((option) => (
         <option key={option.value} value={option.value}>
           {option.label}
@@ -63,26 +77,59 @@ function ContactStatusSelect({ contact, updating, onUpdate }) {
   );
 }
 
-const EASE = [0.22, 1, 0.36, 1];
-
-function truncateMessage(message, max = 72) {
-  if (!message) return "—";
-  if (message.length <= max) return message;
-  return `${message.slice(0, max)}…`;
+function ContactRowActions({ contact, updatingId, onStatusUpdate, onDelete }) {
+  return (
+    <div className="flex shrink-0 flex-nowrap items-center justify-end gap-1.5">
+      <ContactStatusSelect
+        contact={contact}
+        updating={updatingId}
+        onUpdate={onStatusUpdate}
+        compact
+      />
+      <div className="inline-flex shrink-0 overflow-hidden rounded-lg border border-brand-border/60">
+        <Link
+          to={ROUTES.admin.contactDetail(contact.id)}
+          className={`${adminIconBtnClass} ${adminIconBtnViewClass} h-9 w-9 shrink-0 rounded-none border-0`}
+          aria-label={`View enquiry from ${contact.fullname}`}
+        >
+          <Eye className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+        </Link>
+        <button
+          type="button"
+          onClick={() => onDelete(contact)}
+          className={`${adminIconBtnClass} ${adminIconBtnDangerClass} h-9 w-9 shrink-0 rounded-none border-0 border-l border-brand-border/60`}
+          aria-label={`Delete enquiry from ${contact.fullname}`}
+        >
+          <Trash2 className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+        </button>
+      </div>
+    </div>
+  );
 }
+
+const EASE = [0.22, 1, 0.36, 1];
 
 export default function AdminContactsPage() {
   const { token } = useAuth();
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search);
   const [updatingId, setUpdatingId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const pagination = useServerAdminPagination({ resetKey: debouncedSearch });
 
   const loadContacts = useCallback(async () => {
     setLoading(true);
-    const result = await adminContactsServiceApi.listContacts(token);
+    const result = await adminContactsServiceApi.listContacts(
+      token,
+      buildListQueryParams({
+        page: pagination.page,
+        per_page: pagination.pageSize,
+        search: debouncedSearch,
+      })
+    );
     setLoading(false);
 
     if (!result.ok) {
@@ -90,8 +137,11 @@ export default function AdminContactsPage() {
       return;
     }
 
-    setContacts(Array.isArray(result.data) ? result.data : []);
-  }, [token]);
+    const { items, shouldRefetch } = pagination.syncFromResponse(result.data, pagination.page);
+    if (shouldRefetch) return;
+
+    setContacts(items);
+  }, [token, pagination.page, pagination.pageSize, pagination.syncFromResponse, debouncedSearch]);
 
   useEffect(() => {
     loadContacts();
@@ -127,31 +177,11 @@ export default function AdminContactsPage() {
 
     toast.success(result.reason || "Contact deleted.");
     setDeleteTarget(null);
-    setContacts((prev) => prev.filter((item) => item.id !== deleteTarget.id));
+    loadContacts();
   }
 
-  const filteredContacts = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return contacts;
-
-    return contacts.filter((contact) => {
-      const haystack = [
-        contact.fullname,
-        contact.email,
-        contact.phone_number,
-        contact.message,
-        contact.status,
-        contact.type,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      return haystack.includes(query);
-    });
-  }, [contacts, search]);
-
-  const pagination = useAdminPagination(filteredContacts, { resetKey: search });
+  const hasSearch = Boolean(debouncedSearch.trim());
+  const isEmpty = !loading && contacts.length === 0;
 
   return (
     <div className="space-y-6">
@@ -184,22 +214,22 @@ export default function AdminContactsPage() {
         <div className="flex items-center justify-center rounded-2xl border border-black/8 bg-white py-24">
           <Loader2 className="h-7 w-7 animate-spin text-brand-green" aria-hidden />
         </div>
-      ) : filteredContacts.length === 0 ? (
+      ) : isEmpty ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-black/12 bg-white py-20 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-600">
             <MessageSquare className="h-6 w-6" strokeWidth={1.75} aria-hidden />
           </span>
           <p className="font-bold text-brand-ink">
-            {search ? "No enquiries match your search" : "No contact enquiries yet"}
+            {hasSearch ? "No enquiries match your search" : "No contact enquiries yet"}
           </p>
           <p className="max-w-sm text-sm text-brand-muted">
-            {search ? "Try a different search term." : "New contact form submissions will appear here."}
+            {hasSearch ? "Try a different search term." : "New contact form submissions will appear here."}
           </p>
         </div>
       ) : (
         <>
           <AdminTableMobile columns={2}>
-            {pagination.paginatedItems.map((contact, index) => (
+            {contacts.map((contact, index) => (
               <motion.div
                 key={contact.id}
                 initial={{ opacity: 0, y: 6 }}
@@ -208,7 +238,11 @@ export default function AdminContactsPage() {
               >
                 <AdminMobileCard>
                   <AdminMobileCardHeader
-                    title={contact.fullname || "—"}
+                    title={
+                      <span className="block truncate text-sm font-medium normal-case tracking-normal">
+                        {contact.fullname || "—"}
+                      </span>
+                    }
                     subtitle={contact.email}
                     trailing={<StatusBadge status={contact.status} />}
                   />
@@ -216,36 +250,17 @@ export default function AdminContactsPage() {
                     <AdminMobileCardRow label="Phone" value={contact.phone_number || "—"} />
                     <AdminMobileCardRow
                       label="Type"
-                      value={
-                        <span className="inline-flex items-center rounded-full bg-violet-500/10 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
-                          {formatContactLabel(contact.type)}
-                        </span>
-                      }
+                      value={<TypeBadge type={contact.type} />}
                     />
-                    <AdminMobileCardRow label="Message" value={truncateMessage(contact.message, 120)} />
                     <AdminMobileCardRow label="Received" value={formatContactDate(contact.created_at)} />
                   </AdminMobileCardBody>
                   <AdminMobileCardActions>
-                    <ContactStatusSelect
+                    <ContactRowActions
                       contact={contact}
-                      updating={updatingId}
-                      onUpdate={handleStatusUpdate}
+                      updatingId={updatingId}
+                      onStatusUpdate={handleStatusUpdate}
+                      onDelete={setDeleteTarget}
                     />
-                    <Link
-                      to={ROUTES.admin.contactDetail(contact.id)}
-                      className={`${adminIconBtnClass} ${adminIconBtnViewClass}`}
-                      aria-label={`View enquiry from ${contact.fullname}`}
-                    >
-                      <Eye className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => setDeleteTarget(contact)}
-                      className={`${adminIconBtnClass} ${adminIconBtnDangerClass}`}
-                      aria-label={`Delete enquiry from ${contact.fullname}`}
-                    >
-                      <Trash2 className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-                    </button>
                   </AdminMobileCardActions>
                 </AdminMobileCard>
               </motion.div>
@@ -253,21 +268,34 @@ export default function AdminContactsPage() {
           </AdminTableMobile>
 
           <AdminTableDesktop>
-            <table className="w-full text-left">
+            <table className="w-full min-w-[820px] table-fixed text-left">
+              <colgroup>
+                <col className="w-[30%]" />
+                <col className="w-[18%]" />
+                <col className="w-[11%]" />
+                <col className="w-[18%]" />
+                <col className="w-[23%]" />
+              </colgroup>
               <thead className="border-b border-black/8 bg-brand-cream/50">
                 <tr>
-                  {["Contact", "Message", "Type", "Status", "Received", "Actions"].map((heading) => (
+                  {[
+                    { label: "Contact", className: "" },
+                    { label: "Type", className: "" },
+                    { label: "Status", className: "" },
+                    { label: "Received", className: "" },
+                    { label: "Actions", className: "text-right" },
+                  ].map(({ label, className }) => (
                     <th
-                      key={heading}
-                      className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-[0.12em] text-brand-muted"
+                      key={label}
+                      className={`whitespace-nowrap px-4 py-3.5 text-[11px] font-bold uppercase tracking-[0.12em] text-brand-muted ${className}`}
                     >
-                      {heading}
+                      {label}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {pagination.paginatedItems.map((contact, index) => (
+                {contacts.map((contact, index) => (
                   <motion.tr
                     key={contact.id}
                     initial={{ opacity: 0, y: 6 }}
@@ -275,46 +303,33 @@ export default function AdminContactsPage() {
                     transition={{ duration: 0.25, ease: EASE, delay: index * 0.03 }}
                     className="border-b border-black/5 last:border-0 hover:bg-brand-cream/30"
                   >
-                    <td className="px-5 py-4">
-                      <p className="font-semibold text-brand-ink">{contact.fullname || "—"}</p>
-                      <p className="text-xs text-brand-muted">{contact.email}</p>
-                      <p className="text-xs text-brand-muted">{contact.phone_number || "—"}</p>
+                    <td className="align-middle px-4 py-3.5">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-brand-ink" title={contact.fullname}>
+                          {contact.fullname || "—"}
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-brand-muted" title={contact.email}>
+                          {contact.email || "—"}
+                        </p>
+                        <p className="truncate text-xs text-brand-muted">{contact.phone_number || "—"}</p>
+                      </div>
                     </td>
-                    <td className="max-w-xs px-5 py-4">
-                      <p className="text-sm text-brand-ink">{truncateMessage(contact.message)}</p>
+                    <td className="align-middle px-4 py-3.5">
+                      <TypeBadge type={contact.type} />
                     </td>
-                    <td className="px-5 py-4">
-                      <span className="inline-flex items-center rounded-full bg-violet-500/10 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
-                        {formatContactLabel(contact.type)}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
+                    <td className="align-middle px-4 py-3.5">
                       <StatusBadge status={contact.status} />
                     </td>
-                    <td className="px-5 py-4 text-sm text-brand-muted">{formatContactDate(contact.created_at)}</td>
-                    <td className="px-5 py-4">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <ContactStatusSelect
-                          contact={contact}
-                          updating={updatingId}
-                          onUpdate={handleStatusUpdate}
-                        />
-                      <Link
-                        to={ROUTES.admin.contactDetail(contact.id)}
-                        className={`${adminIconBtnClass} ${adminIconBtnViewClass}`}
-                        aria-label={`View enquiry from ${contact.fullname}`}
-                      >
-                        <Eye className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-                      </Link>
-                        <button
-                          type="button"
-                          onClick={() => setDeleteTarget(contact)}
-                          className={`${adminIconBtnClass} ${adminIconBtnDangerClass}`}
-                          aria-label={`Delete enquiry from ${contact.fullname}`}
-                        >
-                          <Trash2 className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-                        </button>
-                      </div>
+                    <td className="whitespace-nowrap align-middle px-4 py-3.5 text-sm tabular-nums text-brand-muted">
+                      {formatContactDate(contact.created_at)}
+                    </td>
+                    <td className="align-middle px-4 py-3.5">
+                      <ContactRowActions
+                        contact={contact}
+                        updatingId={updatingId}
+                        onStatusUpdate={handleStatusUpdate}
+                        onDelete={setDeleteTarget}
+                      />
                     </td>
                   </motion.tr>
                 ))}

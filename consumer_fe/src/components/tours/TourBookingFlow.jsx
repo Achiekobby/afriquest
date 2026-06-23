@@ -1,10 +1,37 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
+import {
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  Clock,
+  CreditCard,
+  Download,
+  FileText,
+  Loader2,
+  Lock,
+  Minus,
+  Plus,
+  X,
+} from "lucide-react";
+import { toast } from "react-toastify";
+import consumerBookingsServiceApi from "../../apis/ConsumerBookingsServiceApi";
 import { getWhatsAppUrl } from "../../config/env";
 import { ROUTES } from "../../constants/routes";
+import { useAuth } from "../../hooks/useAuth";
 import { downloadBookingReceipt } from "../../utils/bookingReceipt";
-import { saveBooking } from "../../utils/bookingStorage";
+import { saveBooking, getBookingStatus } from "../../utils/bookingStorage";
+import {
+  buildCreateBookingPayload,
+  computeBookingSubtotal,
+  canViewBookingReceipt,
+  formatBookingCurrency,
+  mapApiBookingToLocalRecord,
+  mapUserToBookingLeadFields,
+  mergeUserIntoBookingLeadFields,
+  resolveTourUnitPrice,
+} from "../../utils/bookingHelpers";
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -15,12 +42,8 @@ const STEPS = [
   { id: "confirm", label: "Confirm" },
 ];
 
-function formatCurrency(amount) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(amount);
-}
-
-function generateRef() {
-  return `AQW-${Date.now().toString(36).toUpperCase().slice(-8)}`;
+function formatCurrency(amount, currency = "GHS") {
+  return formatBookingCurrency(amount, currency);
 }
 
 const EMPTY_TRAVELER = { name: "", email: "", phone: "" };
@@ -48,7 +71,7 @@ function StepIndicator({ currentStep }) {
                 ].join(" ")}
               >
                 {done ? (
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3} aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                  <Check className="h-3.5 w-3.5" strokeWidth={3} aria-hidden />
                 ) : (
                   i + 1
                 )}
@@ -94,7 +117,7 @@ function TravelerStepper({ value, min, max, onChange }) {
         className="flex h-10 w-10 items-center justify-center rounded-full border border-brand-border bg-white text-lg font-bold text-brand-ink transition-all hover:border-brand-green disabled:opacity-40"
         aria-label="Decrease travelers"
       >
-        −
+        <Minus className="h-4 w-4" strokeWidth={2.5} aria-hidden />
       </button>
       <div className="min-w-[3rem] text-center">
         <p className="text-2xl font-bold text-brand-ink">{value}</p>
@@ -107,14 +130,16 @@ function TravelerStepper({ value, min, max, onChange }) {
         className="flex h-10 w-10 items-center justify-center rounded-full border border-brand-border bg-white text-lg font-bold text-brand-ink transition-all hover:border-brand-green disabled:opacity-40"
         aria-label="Increase travelers"
       >
-        +
+        <Plus className="h-4 w-4" strokeWidth={2.5} aria-hidden />
       </button>
     </div>
   );
 }
 
 export default function TourBookingFlow({ tour, open, onClose }) {
-  const maxTravelers = Math.min(tour.spotsLeft, 10);
+  const navigate = useNavigate();
+  const { token, user } = useAuth();
+  const maxTravelers = Math.min(tour.spotsLeft || tour.bookingSettings?.maxGroupSize || 10, 10);
 
   const [step, setStep] = useState("trip");
   const [selectedDate, setSelectedDate] = useState(tour.departureDates[0]?.date ?? tour.nextDate);
@@ -122,19 +147,24 @@ export default function TourBookingFlow({ tour, open, onClose }) {
   const [paymentMode, setPaymentMode] = useState(null);
   const [payType, setPayType] = useState("full");
   const [bookingRef, setBookingRef] = useState("");
+  const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [processing, setProcessing] = useState(false);
 
-  const [form, setForm] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
+  const [form, setForm] = useState(() => ({
+    ...mapUserToBookingLeadFields(user),
     travelers: [],
-  });
+  }));
 
-  const subtotal = tour.priceNum * travelers;
-  const depositAmount = Math.round(subtotal * (tour.depositPercent / 100));
+  useEffect(() => {
+    if (!user) return;
+    setForm((current) => mergeUserIntoBookingLeadFields(current, user));
+  }, [user]);
+
+  const subtotal = computeBookingSubtotal(tour, travelers);
+  const unitPrice = resolveTourUnitPrice(tour);
+  const depositAmount = Math.round(subtotal * ((tour.depositPercent || 30) / 100));
   const payNowAmount = payType === "deposit" ? depositAmount : subtotal;
+  const currency = tour.priceCurrency || "GHS";
 
   const updateForm = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
 
@@ -163,12 +193,13 @@ export default function TourBookingFlow({ tour, open, onClose }) {
       setPaymentMode(null);
       setPayType("full");
       setSelectedDate(tour.departureDates[0]?.date ?? tour.nextDate);
+      setConfirmedBooking(null);
       setForm({
-        firstName: "", lastName: "", email: "", phone: "",
+        ...mapUserToBookingLeadFields(user),
         travelers: [],
       });
     }
-  }, [open, tour]);
+  }, [open, tour, user]);
 
   useEffect(() => {
     setForm((f) => {
@@ -189,32 +220,95 @@ export default function TourBookingFlow({ tour, open, onClose }) {
     form.phone &&
     form.travelers.every(isTravelerComplete);
 
-  function handleProceedToPayment(e) {
-    e.preventDefault();
-    const ref = generateRef();
-    setBookingRef(ref);
-    setProcessing(true);
+  async function submitIndividualBooking(paymentMode) {
+    if (!token) {
+      toast.info("Please sign in to complete your booking.");
+      navigate(ROUTES.login, { state: { from: { pathname: ROUTES.tourBook(tour.slug) } } });
+      onClose();
+      return null;
+    }
 
-    // Payment gateway integration point — redirect with booking ref + amount
-    // e.g. window.location.href = `${PAYMENT_GATEWAY_URL}?ref=${ref}&amount=${payNowAmount}&travelers=${travelers}`;
+    const bookingForm = {
+      firstName: form.firstName,
+      lastName: form.lastName,
+      email: form.email,
+      phone: form.phone,
+      nationality: "",
+      bookingType: "individual",
+      selectedDate,
+      travelers,
+      groupName: "",
+      groupType: "",
+      organization: "",
+      specialRequests: "",
+      dietaryNeeds: "",
+      paymentMode: paymentMode === "now" ? "online" : "onsite",
+    };
 
-    setTimeout(() => {
-      setProcessing(false);
-      setStep("success");
-      saveBooking(buildReceiptData({ bookingRef: ref }));
-    }, 1500);
+    const payload = buildCreateBookingPayload(bookingForm, tour);
+    if (paymentMode === "now") {
+      payload.amount = payType === "deposit" ? depositAmount : subtotal;
+    }
+
+    const result = await consumerBookingsServiceApi.createBooking(token, payload);
+
+    if (!result.ok || !result.booking) {
+      toast.error(result.reason || result.message || "Could not submit booking.");
+      return null;
+    }
+
+    const record = mapApiBookingToLocalRecord(result.booking, bookingForm, tour);
+    saveBooking(record);
+    setBookingRef(result.booking.bookingSlug);
+    return result;
   }
 
-  function handlePayLaterConfirm(e) {
+  async function handleProceedToPayment(e) {
     e.preventDefault();
     setProcessing(true);
-    const ref = generateRef();
-    setBookingRef(ref);
-    setTimeout(() => {
-      setProcessing(false);
-      setStep("success");
-      saveBooking({ ...buildReceiptData(), bookingRef: ref });
-    }, 1200);
+    const result = await submitIndividualBooking("now");
+    setProcessing(false);
+    if (!result) return;
+
+    if (result.paymentUrl) {
+      window.location.href = result.paymentUrl;
+      return;
+    }
+
+    setStep("success");
+    const record = mapApiBookingToLocalRecord(result.booking, {
+      firstName: form.firstName,
+      lastName: form.lastName,
+      email: form.email,
+      phone: form.phone,
+      bookingType: "individual",
+      paymentMode: "online",
+    }, tour);
+    const savedRecord = { ...record, status: getBookingStatus(record) };
+    setConfirmedBooking(savedRecord);
+    if (canViewBookingReceipt(savedRecord)) {
+      downloadBookingReceipt(savedRecord);
+    }
+  }
+
+  async function handlePayLaterConfirm(e) {
+    e.preventDefault();
+    setProcessing(true);
+    const result = await submitIndividualBooking("later");
+    setProcessing(false);
+    if (!result) return;
+
+    toast.success(result.reason || "Booking submitted.");
+    const record = mapApiBookingToLocalRecord(result.booking, {
+      firstName: form.firstName,
+      lastName: form.lastName,
+      email: form.email,
+      phone: form.phone,
+      bookingType: "individual",
+      paymentMode: "onsite",
+    }, tour);
+    setConfirmedBooking({ ...record, status: getBookingStatus(record) });
+    setStep("success");
   }
 
   const stepTitle = useMemo(() => {
@@ -227,43 +321,12 @@ export default function TourBookingFlow({ tour, open, onClose }) {
     return "";
   }, [step]);
 
-  function buildReceiptData(overrides = {}) {
-    return {
-      bookingRef,
-      tour: {
-        name: tour.name,
-        slug: tour.slug,
-        location: tour.location,
-        country: tour.country,
-        duration: tour.duration,
-        priceNum: tour.priceNum,
-        image: tour.image,
-      },
-      selectedDate,
-      travelers,
-      paymentMode,
-      payType,
-      payNowAmount,
-      subtotal,
-      depositAmount,
-      payLaterHoldHours: tour.payLaterHoldHours,
-      depositPercent: tour.depositPercent,
-      leadTraveler: {
-        firstName: form.firstName,
-        lastName: form.lastName,
-        email: form.email,
-        phone: form.phone,
-      },
-      additionalTravelers: form.travelers,
-      issuedAt: new Date().toISOString(),
-      ...overrides,
-    };
+  function handleDownloadReceipt() {
+    if (!confirmedBooking || !canViewBookingReceipt(confirmedBooking)) return;
+    downloadBookingReceipt(confirmedBooking);
   }
 
-  function handleDownloadReceipt() {
-    if (!bookingRef) return;
-    downloadBookingReceipt(buildReceiptData());
-  }
+  const canShowReceipt = confirmedBooking && canViewBookingReceipt(confirmedBooking);
 
   if (!open) return null;
 
@@ -303,7 +366,7 @@ export default function TourBookingFlow({ tour, open, onClose }) {
             aria-label="Close booking"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-brand-border/60 text-brand-muted hover:bg-brand-cream"
           >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden><path strokeLinecap="round" d="M6 6l12 12M18 6 6 18" /></svg>
+            <X className="h-4 w-4" strokeWidth={2.5} aria-hidden />
           </button>
         </div>
 
@@ -333,8 +396,8 @@ export default function TourBookingFlow({ tour, open, onClose }) {
                           <p className="text-sm font-semibold text-brand-ink">{dep.date}</p>
                           <p className="text-xs text-brand-muted">{dep.label}</p>
                         </div>
-                        <span className={`text-xs font-bold ${dep.spots <= 3 ? "text-red-500" : "text-brand-green"}`}>
-                          {dep.spots} spots left
+                        <span className={`text-xs font-bold ${(dep.spotsLeft ?? dep.spotsTotal ?? 0) <= 3 ? "text-red-500" : "text-brand-green"}`}>
+                          {dep.spotsLeft ?? dep.spotsTotal ?? 0} spots left
                         </span>
                       </button>
                     ))}
@@ -347,12 +410,12 @@ export default function TourBookingFlow({ tour, open, onClose }) {
                     <TravelerStepper value={travelers} min={1} max={maxTravelers} onChange={setTravelers} />
                     <div className="text-right">
                       <p className="text-xs text-brand-muted">Per person</p>
-                      <p className="text-lg font-bold text-brand-green">{formatCurrency(tour.priceNum)}</p>
+                      <p className="text-lg font-bold text-brand-green">{formatCurrency(unitPrice, currency)}</p>
                     </div>
                   </div>
                   {travelers > 1 && (
                     <p className="mt-3 text-xs text-brand-muted">
-                      Paying for {travelers} people — total {formatCurrency(subtotal)}
+                      Paying for {travelers} people — total {formatCurrency(subtotal, currency)}
                     </p>
                   )}
                 </div>
@@ -420,14 +483,14 @@ export default function TourBookingFlow({ tour, open, onClose }) {
                   className="group flex w-full items-start gap-4 rounded-xl border-2 border-brand-border/70 p-5 text-left transition-all hover:border-brand-green hover:bg-brand-green/5"
                 >
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-green/10 text-brand-green">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
+                    <CreditCard className="h-5 w-5" strokeWidth={1.5} aria-hidden />
                   </div>
                   <div>
                     <p className="font-bold text-brand-ink group-hover:text-brand-green">Pay now</p>
                     <p className="mt-1 text-xs leading-relaxed text-brand-muted">
                       Secure all {travelers} {travelers === 1 ? "spot" : "spots"} instantly. Pay in full or a {tour.depositPercent}% deposit today.
                     </p>
-                    <p className="mt-2 text-sm font-bold text-brand-green">{formatCurrency(subtotal)} total</p>
+                    <p className="mt-2 text-sm font-bold text-brand-green">{formatCurrency(subtotal, currency)} total</p>
                   </div>
                 </button>
 
@@ -437,14 +500,14 @@ export default function TourBookingFlow({ tour, open, onClose }) {
                   className="group flex w-full items-start gap-4 rounded-xl border-2 border-brand-border/70 p-5 text-left transition-all hover:border-brand-orange hover:bg-brand-orange/5"
                 >
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-orange/10 text-brand-orange">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <Clock className="h-5 w-5" strokeWidth={1.5} aria-hidden />
                   </div>
                   <div>
                     <p className="font-bold text-brand-ink group-hover:text-brand-orange">Pay later</p>
                     <p className="mt-1 text-xs leading-relaxed text-brand-muted">
                       Reserve your spots free for {tour.payLaterHoldHours} hours. Pay the {tour.depositPercent}% deposit before the hold expires.
                     </p>
-                    <p className="mt-2 text-sm font-bold text-brand-orange">{formatCurrency(depositAmount)} deposit due later</p>
+                    <p className="mt-2 text-sm font-bold text-brand-orange">{formatCurrency(depositAmount, currency)} deposit due later</p>
                   </div>
                 </button>
               </motion.div>
@@ -457,8 +520,8 @@ export default function TourBookingFlow({ tour, open, onClose }) {
                   <p className="text-xs font-semibold uppercase tracking-wider text-brand-muted">Order summary</p>
                   <div className="mt-3 space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-brand-muted">{formatCurrency(tour.priceNum)} × {travelers} {travelers === 1 ? "person" : "people"}</span>
-                      <span className="font-semibold text-brand-ink">{formatCurrency(subtotal)}</span>
+                      <span className="text-brand-muted">{formatCurrency(unitPrice, currency)} × {travelers} {travelers === 1 ? "person" : "people"}</span>
+                      <span className="font-semibold text-brand-ink">{formatCurrency(subtotal, currency)}</span>
                     </div>
                     <div className="flex justify-between text-xs text-brand-muted">
                       <span>{selectedDate} · {tour.duration}</span>
@@ -482,7 +545,7 @@ export default function TourBookingFlow({ tour, open, onClose }) {
                       ].join(" ")}
                     >
                       <p className="text-xs font-semibold text-brand-ink">{opt.label}</p>
-                      <p className="mt-0.5 text-sm font-bold text-brand-green">{formatCurrency(opt.amount)}</p>
+                      <p className="mt-0.5 text-sm font-bold text-brand-green">{formatCurrency(opt.amount, currency)}</p>
                     </button>
                   ))}
                 </div>
@@ -490,14 +553,12 @@ export default function TourBookingFlow({ tour, open, onClose }) {
                 <div className="rounded-xl border border-brand-green/25 bg-brand-green/5 p-4">
                   <div className="flex items-start gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-green/10 text-brand-green">
-                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
+                      <Lock className="h-5 w-5" strokeWidth={1.5} aria-hidden />
                     </div>
                     <div>
                       <p className="text-sm font-bold text-brand-ink">Secure payment checkout</p>
                       <p className="mt-1 text-xs leading-relaxed text-brand-muted">
-                        You&apos;ll be redirected to our secure payment partner to complete your {payType === "deposit" ? "deposit" : "payment"} of {formatCurrency(payNowAmount)}. Card details are handled entirely by the gateway — we never store them.
+                        You&apos;ll be redirected to our secure payment partner to complete your {payType === "deposit" ? "deposit" : "payment"} of {formatCurrency(payNowAmount, currency)}. Card details are handled entirely by the gateway — we never store them.
                       </p>
                     </div>
                   </div>
@@ -510,13 +571,13 @@ export default function TourBookingFlow({ tour, open, onClose }) {
                 >
                   {processing ? (
                     <>
-                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden><circle cx="12" cy="12" r="10" strokeOpacity="0.25" /><path d="M12 2a10 10 0 0 1 10 10" /></svg>
+                      <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} aria-hidden />
                       Redirecting to checkout…
                     </>
                   ) : (
                     <>
-                      Continue to secure checkout — {formatCurrency(payNowAmount)}
-                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                      Continue to secure checkout — {formatCurrency(payNowAmount, currency)}
+                      <ArrowRight className="h-4 w-4" strokeWidth={2.2} aria-hidden />
                     </>
                   )}
                 </button>
@@ -528,12 +589,12 @@ export default function TourBookingFlow({ tour, open, onClose }) {
                 <div className="rounded-xl border border-brand-orange/30 bg-brand-orange/5 p-5">
                   <div className="flex items-start gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-orange/15 text-brand-orange">
-                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      <Clock className="h-5 w-5" strokeWidth={1.5} aria-hidden />
                     </div>
                     <div>
                       <p className="font-bold text-brand-ink">Your spots are held for {tour.payLaterHoldHours} hours</p>
                       <p className="mt-1 text-xs leading-relaxed text-brand-muted">
-                        No payment required now. We&apos;ll email you a secure payment link. Pay the {tour.depositPercent}% deposit ({formatCurrency(depositAmount)}) before your hold expires to confirm.
+                        No payment required now. We&apos;ll email you a secure payment link. Pay the {tour.depositPercent}% deposit ({formatCurrency(depositAmount, currency)}) before your hold expires to confirm.
                       </p>
                     </div>
                   </div>
@@ -542,22 +603,22 @@ export default function TourBookingFlow({ tour, open, onClose }) {
                 <div className="rounded-xl border border-brand-border/60 bg-brand-cream/50 p-4 space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-brand-muted">Tour ({travelers} {travelers === 1 ? "person" : "people"})</span>
-                    <span className="font-semibold">{formatCurrency(subtotal)}</span>
+                    <span className="font-semibold">{formatCurrency(subtotal, currency)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-brand-muted">Due within {tour.payLaterHoldHours}h</span>
-                    <span className="font-bold text-brand-orange">{formatCurrency(depositAmount)}</span>
+                    <span className="font-bold text-brand-orange">{formatCurrency(depositAmount, currency)}</span>
                   </div>
                   <div className="flex justify-between border-t border-brand-border/40 pt-2">
                     <span className="text-brand-muted">Due before departure</span>
-                    <span className="font-semibold text-brand-ink">{formatCurrency(subtotal - depositAmount)}</span>
+                    <span className="font-semibold text-brand-ink">{formatCurrency(subtotal - depositAmount, currency)}</span>
                   </div>
                 </div>
 
                 <ul className="space-y-2 text-xs text-brand-muted">
-                  <li className="flex items-center gap-2"><span className="text-brand-green">✓</span> Confirmation email sent immediately</li>
-                  <li className="flex items-center gap-2"><span className="text-brand-green">✓</span> Flexible — pay deposit or full amount later</li>
-                  <li className="flex items-center gap-2"><span className="text-brand-green">✓</span> Spots released if deposit not received in time</li>
+                  <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 shrink-0 text-brand-green" strokeWidth={2.5} aria-hidden /> Confirmation email sent immediately</li>
+                  <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 shrink-0 text-brand-green" strokeWidth={2.5} aria-hidden /> Flexible — pay deposit or full amount later</li>
+                  <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 shrink-0 text-brand-green" strokeWidth={2.5} aria-hidden /> Spots released if deposit not received in time</li>
                 </ul>
 
                 <button
@@ -573,14 +634,14 @@ export default function TourBookingFlow({ tour, open, onClose }) {
             {step === "success" && (
               <motion.div key="success" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4, ease: EASE }} className="py-4 text-center">
                 <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-brand-green/10">
-                  <svg className="h-8 w-8 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                  <CheckCircle2 className="h-8 w-8 text-brand-green" strokeWidth={2} aria-hidden />
                 </div>
                 <h3 className="mt-5 text-xl font-bold text-brand-ink">
                   {paymentMode === "now" ? "Booking confirmed!" : "Reservation confirmed!"}
                 </h3>
                 <p className="mt-2 text-sm text-brand-muted">
                   {paymentMode === "now"
-                    ? <>Payment of <strong className="text-brand-ink">{formatCurrency(payNowAmount)}</strong> processed. Confirmation sent to <strong className="text-brand-ink">{form.email}</strong></>
+                    ? <>Payment of <strong className="text-brand-ink">{formatCurrency(payNowAmount, currency)}</strong> processed. Confirmation sent to <strong className="text-brand-ink">{form.email}</strong></>
                     : <>A confirmation has been sent to <strong className="text-brand-ink">{form.email}</strong></>}
                 </p>
 
@@ -604,7 +665,7 @@ export default function TourBookingFlow({ tour, open, onClose }) {
                   {paymentMode === "now" && (
                     <div className="flex justify-between border-t border-brand-border/40 pt-2">
                       <span className="text-brand-muted">Paid today</span>
-                      <span className="font-bold text-brand-green">{formatCurrency(payNowAmount)}</span>
+                      <span className="font-bold text-brand-green">{formatCurrency(payNowAmount, currency)}</span>
                     </div>
                   )}
                   {paymentMode === "later" && (
@@ -615,12 +676,11 @@ export default function TourBookingFlow({ tour, open, onClose }) {
                   )}
                 </div>
 
+                {canShowReceipt ? (
                 <div className="mt-5 rounded-xl border border-brand-gold/40 bg-brand-gold/10 px-4 py-4 text-left">
                   <div className="flex items-start gap-3">
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-gold/20 text-brand-orange">
-                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
+                      <FileText className="h-5 w-5" strokeWidth={1.5} aria-hidden />
                     </div>
                     <div>
                       <p className="text-sm font-bold text-brand-ink">Present this receipt at the premises</p>
@@ -632,14 +692,13 @@ export default function TourBookingFlow({ tour, open, onClose }) {
                         onClick={handleDownloadReceipt}
                         className="mt-3 inline-flex items-center gap-2 rounded-lg bg-brand-green px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-brand-green-dark"
                       >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
+                        <Download className="h-4 w-4" strokeWidth={2} aria-hidden />
                         Download receipt
                       </button>
                     </div>
                   </div>
                 </div>
+                ) : null}
 
                 <a
                   href={getWhatsAppUrl(`Hi AfriQwest, my booking ref is ${bookingRef}. I'd like to confirm details for ${tour.name}.`)}
@@ -706,23 +765,29 @@ export default function TourBookingFlow({ tour, open, onClose }) {
           </div>
         )}
 
-        {step === "success" && (
+        {step === "success" && canShowReceipt ? (
           <div className="flex flex-col gap-2 border-t border-brand-border/50 px-6 py-4">
             <button
               type="button"
               onClick={handleDownloadReceipt}
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-brand-green/30 bg-brand-green/5 py-3 text-sm font-semibold text-brand-green transition-all hover:bg-brand-green/10"
             >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
+              <Download className="h-4 w-4" strokeWidth={2} aria-hidden />
               Download receipt
             </button>
             <button type="button" onClick={onClose} className="w-full rounded-xl bg-brand-green py-3 text-sm font-semibold text-white hover:bg-brand-green-dark">
               Done
             </button>
           </div>
-        )}
+        ) : null}
+
+        {step === "success" && !canShowReceipt ? (
+          <div className="border-t border-brand-border/50 px-6 py-4">
+            <button type="button" onClick={onClose} className="w-full rounded-xl bg-brand-green py-3 text-sm font-semibold text-white hover:bg-brand-green-dark">
+              Done
+            </button>
+          </div>
+        ) : null}
       </motion.div>
     </div>
   );

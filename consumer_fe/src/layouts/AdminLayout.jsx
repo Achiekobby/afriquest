@@ -69,12 +69,12 @@ function NavItem({ to, label, icon: Icon, end = false, collapsed = false, onClic
 
 function NavSection({ title, collapsed, children }) {
   return (
-    <div className="space-y-0.5">
+    <div>
       {!collapsed && (
-        <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white/30">{title}</p>
+        <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white/30">{title}</p>
       )}
-      {collapsed && <div className="mb-1 border-t border-white/10" />}
-      {children}
+      {collapsed && <div className="mb-2 border-t border-white/10" />}
+      <div className="flex flex-col gap-2">{children}</div>
     </div>
   );
 }

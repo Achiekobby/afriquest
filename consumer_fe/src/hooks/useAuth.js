@@ -17,6 +17,7 @@ import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { persistor } from "../store";
 import { clearLegacyAuth } from "../store/legacyAuthMigration";
 import adminAuthServiceApi from "../apis/AdminAuthServiceApi";
+import operatorAuthServiceApi from "../apis/OperatorAuthServiceApi";
 
 export function useAuth() {
   const dispatch = useAppDispatch();
@@ -37,11 +38,20 @@ export function useAuth() {
 
   const logout = useCallback(async () => {
     const wasAdmin = isAdminRole(role);
+    const wasOperator = isOperatorRole(role);
     const currentToken = token;
 
     if (wasAdmin && currentToken) {
       try {
         await adminAuthServiceApi.logout(currentToken);
+      } catch {
+        // Local session is still cleared if the API call fails.
+      }
+    }
+
+    if (wasOperator && currentToken) {
+      try {
+        await operatorAuthServiceApi.logout(currentToken);
       } catch {
         // Local session is still cleared if the API call fails.
       }
@@ -57,7 +67,12 @@ export function useAuth() {
       // Persist flush is best-effort; in-memory state is already cleared.
     }
 
-    navigate(wasAdmin ? ROUTES.admin.login : ROUTES.home, { replace: true });
+    if (wasAdmin) {
+      navigate(ROUTES.admin.login, { replace: true });
+      return;
+    }
+
+    navigate(ROUTES.home, { replace: true });
   }, [dispatch, navigate, queryClient, role, token]);
 
   return {

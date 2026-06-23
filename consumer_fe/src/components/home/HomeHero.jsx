@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { motion } from "motion/react";
 import Container from "../layout/Container";
 import { images } from "../../config/images";
 import { heroContent } from "../../data/homeContent";
 import { ROUTES } from "../../constants/routes";
+import { COUNTRY_FILTER_OPTIONS } from "../../utils/publicListingsHelpers";
 
-const DESTINATIONS = ["Ghana", "Kenya", "South Africa"];
+const HERO_DESTINATIONS = COUNTRY_FILTER_OPTIONS.filter((option) => option.id !== "all");
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -277,9 +278,16 @@ export default function HomeHero() {
   const [date, setDate] = useState("");
   const navigate = useNavigate();
 
+  const minDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
   function handleSearch(e) {
     e.preventDefault();
-    navigate(ROUTES.tours);
+    navigate(
+      ROUTES.toursSearch({
+        country: location || undefined,
+        date: date || undefined,
+      }),
+    );
   }
 
   return (
@@ -367,8 +375,10 @@ export default function HomeHero() {
                     className="w-full appearance-none bg-transparent text-sm font-semibold text-brand-ink outline-none"
                   >
                     <option value="">Where to go?</option>
-                    {DESTINATIONS.map((d) => (
-                      <option key={d} value={d}>{d}</option>
+                    {HERO_DESTINATIONS.map((destination) => (
+                      <option key={destination.id} value={destination.id}>
+                        {destination.label}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -391,6 +401,7 @@ export default function HomeHero() {
                   <input
                     type="date"
                     value={date}
+                    min={minDate}
                     onChange={(e) => setDate(e.target.value)}
                     className="w-full bg-transparent text-sm font-semibold text-brand-ink outline-none [color-scheme:light]"
                   />

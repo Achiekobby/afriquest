@@ -5,12 +5,6 @@ import { ROUTES } from "../../constants/routes";
 const guestActions = (
   <>
     <Link
-      to={ROUTES.myBookings}
-      className="text-sm font-medium text-brand-green transition-colors duration-200 hover:text-brand-green-dark"
-    >
-      My bookings
-    </Link>
-    <Link
       to={ROUTES.login}
       className="text-sm font-medium text-brand-muted transition-colors duration-200 hover:text-brand-green"
     >
@@ -27,9 +21,6 @@ const guestActions = (
 
 const guestMobileActions = (
   <>
-    <Link to={ROUTES.myBookings} className="btn-secondary w-full justify-center py-3">
-      My bookings
-    </Link>
     <Link to={ROUTES.login} className="btn-secondary w-full justify-center py-3">
       Sign in
     </Link>

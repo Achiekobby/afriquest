@@ -76,6 +76,16 @@ class ConsumerAuthServiceApi {
       user: mapClientUser(result.data),
     };
   }
+
+  async updateProfile(token, payload) {
+    const result = await this.post("/client/update-profile", payload, { token, dedupe: false });
+    if (!result.ok) return { ...result, user: null };
+
+    return {
+      ...result,
+      user: mapClientUser(result.data),
+    };
+  }
 }
 
 const consumerAuthServiceApi = new ConsumerAuthServiceApi();

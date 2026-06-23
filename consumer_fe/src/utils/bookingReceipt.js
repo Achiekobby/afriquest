@@ -1,7 +1,8 @@
 import env from "../config/env";
+import { formatBookingCurrency } from "./bookingHelpers";
 
-function formatCurrency(amount) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(amount);
+function formatCurrency(amount, currency = "GHS") {
+  return formatBookingCurrency(amount, currency);
 }
 
 function formatDate(iso) {
@@ -73,6 +74,7 @@ export function buildReceiptHtml(data) {
     specialRequests,
     dietaryNeeds,
     issuedAt = new Date().toISOString(),
+    currency = "GHS",
   } = data;
 
   const statusLabel =
@@ -88,14 +90,14 @@ export function buildReceiptHtml(data) {
 
   const amountLine =
     paymentMode === "online"
-      ? `<tr><td>Amount paid today</td><td><strong>${escapeHtml(formatCurrency(payNowAmount))}</strong></td></tr>`
+      ? `<tr><td>Amount paid today</td><td><strong>${escapeHtml(formatCurrency(payNowAmount, currency))}</strong></td></tr>`
       : paymentMode === "onsite"
-        ? `<tr><td>Total due on site</td><td><strong>${escapeHtml(formatCurrency(subtotal))}</strong></td></tr>
-           <tr><td>Amount paid today</td><td>$0 — pay at check-in</td></tr>`
+        ? `<tr><td>Total due on site</td><td><strong>${escapeHtml(formatCurrency(subtotal, currency))}</strong></td></tr>
+           <tr><td>Amount paid today</td><td>${escapeHtml(formatCurrency(0, currency))} — pay at check-in</td></tr>`
         : paymentMode === "now"
-          ? `<tr><td>Amount paid today</td><td><strong>${escapeHtml(formatCurrency(payNowAmount))}</strong></td></tr>`
-          : `<tr><td>Total tour cost</td><td>${escapeHtml(formatCurrency(subtotal))}</td></tr>
-             <tr><td>Deposit due within ${payLaterHoldHours}h</td><td><strong>${escapeHtml(formatCurrency(depositAmount))}</strong></td></tr>`;
+          ? `<tr><td>Amount paid today</td><td><strong>${escapeHtml(formatCurrency(payNowAmount, currency))}</strong></td></tr>`
+          : `<tr><td>Total tour cost</td><td>${escapeHtml(formatCurrency(subtotal, currency))}</td></tr>
+             <tr><td>Deposit due within ${payLaterHoldHours}h</td><td><strong>${escapeHtml(formatCurrency(depositAmount, currency))}</strong></td></tr>`;
 
   return `<!DOCTYPE html>
 <html lang="en">

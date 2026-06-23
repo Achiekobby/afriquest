@@ -1,6 +1,7 @@
 import axios from "axios";
 import env from "../config/env";
 import { parseApiEnvelope, parseApiError } from "../utils/apiResponse";
+import { toQueryString } from "../utils/queryString";
 import { buildRequestKey, dedupeRequest } from "./dedupService";
 
 class AdminUsersServiceApi {
@@ -16,8 +17,8 @@ class AdminUsersServiceApi {
     };
   }
 
-  async request(method, path, { token, body, dedupe = true } = {}) {
-    const url = `${this.baseUrl}${path}`;
+  async request(method, path, { token, body, params, dedupe = true } = {}) {
+    const url = `${this.baseUrl}${path}${toQueryString(params)}`;
     const key = buildRequestKey({ method, url, body });
 
     const exec = async () => {
@@ -37,8 +38,8 @@ class AdminUsersServiceApi {
     return dedupe ? dedupeRequest(key, exec) : exec();
   }
 
-  listAdmins(token) {
-    return this.request("GET", "/admin/admins", { token });
+  listAdmins(token, params) {
+    return this.request("GET", "/admin/admins", { token, params, dedupe: false });
   }
 
   getAdmin(token, id) {

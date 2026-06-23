@@ -142,7 +142,7 @@ export default function NavbarShell({ actions, mobileActions }) {
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.35, ease: EASE }}
-            className="overflow-hidden border-t border-brand-border/40 bg-white/90 backdrop-blur-xl lg:hidden"
+            className="max-h-[calc(100dvh-4.5rem)] overflow-y-auto overscroll-contain border-t border-brand-border/40 bg-white/90 backdrop-blur-xl lg:hidden"
           >
             <Container className="py-5">
               <nav className="flex flex-col gap-1">

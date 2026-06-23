@@ -27,4 +27,11 @@ export const images = {
       morocco: "/images/home/dest-morocco.jpg",
     },
   },
+
+  tour_sites: {
+    waterfall: "/images/home/waterfall.jpg",
+    manhyia_palace: "/images/home/manhyia_palace.jpg",
+    detty_december: "/images/home/detty_december.webp",
+    arts_and_craft: "/images/home/arts_and_craft.jpg",
+  },
 };

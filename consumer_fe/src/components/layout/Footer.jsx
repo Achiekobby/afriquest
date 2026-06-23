@@ -1,28 +1,17 @@
+import { useMemo } from "react";
 import { Link } from "react-router";
 import Container from "./Container";
 import env, { getWhatsAppUrl } from "../../config/env";
 import { images } from "../../config/images";
 import { ROUTES } from "../../constants/routes";
 import { brand } from "../../data/brandContent";
+import { useAuth } from "../../hooks/useAuth";
+import { getFooterAccountLinks, exploreFooterLinks } from "../navigation/navConfig";
 
-const footerLinks = {
-  Explore: [
-    { label: "Home", to: ROUTES.home },
-    { label: "Tours", to: ROUTES.tours },
-    { label: "Experiences", to: ROUTES.experiences },
-    { label: "Stories", to: ROUTES.stories },
-    { label: "Contact", to: ROUTES.contact },
-  ],
-  Company: [
-    { label: "About us", to: ROUTES.about },
-    { label: "Why AfriQwest", to: ROUTES.whyUs },
-  ],
-  Account: [
-    { label: "My bookings", to: ROUTES.myBookings },
-    { label: "Sign in", to: ROUTES.login },
-    { label: "Create account", to: ROUTES.signup },
-  ],
-};
+const companyLinks = [
+  { label: "About us", to: ROUTES.about },
+  { label: "Why AfriQwest", to: ROUTES.whyUs },
+];
 
 const hubs = [
   { name: "Ghana", label: "Heritage Coast" },
@@ -30,7 +19,24 @@ const hubs = [
   { name: "South Africa", label: "Vibrant Cities" },
 ];
 
+function getDisplayName(user) {
+  return user?.name || user?.firstName || user?.email || user?.phone || "Account";
+}
+
 export default function Footer() {
+  const { isAuthenticated, role, user, hasAdminPermission } = useAuth();
+
+  const footerLinks = useMemo(
+    () => ({
+      Explore: exploreFooterLinks,
+      Company: companyLinks,
+      Account: getFooterAccountLinks({ isAuthenticated, role, hasAdminPermission }),
+    }),
+    [isAuthenticated, role, hasAdminPermission],
+  );
+
+  const accountSectionTitle = isAuthenticated ? "My account" : "Account";
+
   return (
     <footer className="relative border-t border-brand-green-dark bg-brand-green text-white">
       <div
@@ -52,6 +58,12 @@ export default function Footer() {
               {brand.tagline}. Deep expertise across Ghana, Kenya, and South Africa — with global
               headquarters in Houston, Texas.
             </p>
+
+            {isAuthenticated ? (
+              <p className="mt-3 text-xs font-semibold text-brand-gold">
+                Signed in as {getDisplayName(user)}
+              </p>
+            ) : null}
 
             <div className="mt-5 flex flex-wrap gap-2">
               {hubs.map((hub) => (
@@ -87,7 +99,7 @@ export default function Footer() {
             {Object.entries(footerLinks).map(([title, links]) => (
               <div key={title}>
                 <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-brand-gold">
-                  {title}
+                  {title === "Account" ? accountSectionTitle : title}
                 </h3>
                 <ul className="mt-4 space-y-2.5">
                   {links.map((link) => (

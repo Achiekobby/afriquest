@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { motion } from "motion/react";
 import Container from "../../components/layout/Container";
+import { NAV_FEATURES } from "../../components/navigation/navConfig";
 import { ROUTES } from "../../constants/routes";
 import { images } from "../../config/images";
 import { getWhatsAppUrl } from "../../config/env";
@@ -176,15 +177,17 @@ export default function WhyUsPage() {
             ))}
           </div>
 
-          <motion.div {...rise(0.2)} className="mt-10 text-center">
-            <Link
-              to={ROUTES.experiences}
-              className="inline-flex items-center gap-2 rounded-xl border border-brand-border bg-white px-6 py-3 text-sm font-semibold text-brand-green shadow-sm transition-all hover:border-brand-green/30 hover:shadow-md"
-            >
-              Explore all experiences
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-            </Link>
-          </motion.div>
+          {NAV_FEATURES.experiences ? (
+            <motion.div {...rise(0.2)} className="mt-10 text-center">
+              <Link
+                to={ROUTES.experiences}
+                className="inline-flex items-center gap-2 rounded-xl border border-brand-border bg-white px-6 py-3 text-sm font-semibold text-brand-green shadow-sm transition-all hover:border-brand-green/30 hover:shadow-md"
+              >
+                Explore all experiences
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+              </Link>
+            </motion.div>
+          ) : null}
         </Container>
       </section>
 

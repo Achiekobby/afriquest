@@ -1,4 +1,5 @@
 const DATA_URL_RE = /^data:([^;]+);base64,(.+)$/;
+const REMOTE_URL_RE = /^https?:\/\//i;
 
 export const MAX_FEATURE_IMAGES = 5;
 export const MAX_FEATURE_IMAGES_TOTAL_BYTES = 10 * 1024 * 1024;
@@ -103,6 +104,32 @@ export function getImagePreviewSrc(image) {
     return `data:${mime};base64,${image.data}`;
   }
   return image.uri || "";
+}
+
+export function isRemoteImageUrl(value) {
+  return typeof value === "string" && REMOTE_URL_RE.test(value);
+}
+
+export function hasUploadedImageData(image) {
+  if (!image) return false;
+  if (typeof image === "string") return image.startsWith("data:");
+  return Boolean(normalizeTourImage(image).data);
+}
+
+/** Returns an https URL for unchanged images, or a base64 data URI for new uploads. */
+export function resolveImageForApiPayload(image, fallbackUrl = "") {
+  const normalized = normalizeTourImage(image, fallbackUrl);
+
+  if (normalized.data) {
+    return getImagePreviewSrc(normalized);
+  }
+
+  const candidate = normalized.uri || fallbackUrl;
+  if (isRemoteImageUrl(candidate)) {
+    return candidate;
+  }
+
+  return fallbackUrl || "";
 }
 
 export function toApiImagePayload(image) {

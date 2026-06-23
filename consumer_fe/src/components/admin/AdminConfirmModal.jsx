@@ -62,6 +62,7 @@ export default function AdminConfirmModal({
             transition={{ duration: 0.2 }}
             className="absolute inset-0 bg-black/45 backdrop-blur-sm"
             aria-hidden
+            onClick={() => !loading && onClose?.()}
           />
           <motion.div
             initial={{ opacity: 0, y: 24, scale: 0.98 }}
@@ -73,6 +74,7 @@ export default function AdminConfirmModal({
             aria-labelledby="admin-confirm-title"
             aria-describedby="admin-confirm-message"
             className="relative z-10 w-full max-w-md overflow-hidden rounded-t-3xl border border-black/8 bg-white shadow-2xl sm:rounded-3xl"
+            onClick={(event) => event.stopPropagation()}
           >
             <div className="px-6 pb-2 pt-6">
               <div className="flex flex-col items-center text-center">

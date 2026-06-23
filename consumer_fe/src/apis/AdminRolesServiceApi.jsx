@@ -1,6 +1,7 @@
 import axios from "axios";
 import env from "../config/env";
 import { parseApiEnvelope, parseApiError } from "../utils/apiResponse";
+import { toQueryString } from "../utils/queryString";
 import { buildRequestKey, dedupeRequest } from "./dedupService";
 
 class AdminRolesServiceApi {
@@ -16,8 +17,8 @@ class AdminRolesServiceApi {
     };
   }
 
-  async request(method, path, { token, body, dedupe = true } = {}) {
-    const url = `${this.baseUrl}${path}`;
+  async request(method, path, { token, body, params, dedupe = true } = {}) {
+    const url = `${this.baseUrl}${path}${toQueryString(params)}`;
     const key = buildRequestKey({ method, url, body });
 
     const exec = async () => {
@@ -37,8 +38,8 @@ class AdminRolesServiceApi {
     return dedupe ? dedupeRequest(key, exec) : exec();
   }
 
-  listPermissions(token) {
-    return this.request("GET", "/admin/permissions", { token });
+  listPermissions(token, params) {
+    return this.request("GET", "/admin/permissions", { token, params, dedupe: false });
   }
 
   getPermission(token, id) {
@@ -57,8 +58,8 @@ class AdminRolesServiceApi {
     return this.request("DELETE", `/admin/permissions/${id}`, { token, dedupe: false });
   }
 
-  listRoles(token) {
-    return this.request("GET", "/admin/roles", { token });
+  listRoles(token, params) {
+    return this.request("GET", "/admin/roles", { token, params, dedupe: false });
   }
 
   getRole(token, id) {

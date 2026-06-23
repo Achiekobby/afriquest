@@ -1,5 +1,5 @@
-import { Navigate, Outlet } from "react-router";
-import { getGuestLandingRoute } from "../constants/roles";
+import { Navigate, Outlet, useLocation } from "react-router";
+import { resolvePostAuthRedirect } from "../constants/roles";
 import { useAuth } from "../hooks/useAuth";
 
 /**
@@ -7,9 +7,11 @@ import { useAuth } from "../hooks/useAuth";
  */
 export default function PublicOnlyRoute() {
   const { isAuthenticated, user } = useAuth();
+  const location = useLocation();
+  const from = location.state?.from;
 
   if (isAuthenticated) {
-    return <Navigate to={getGuestLandingRoute(user?.role)} replace />;
+    return <Navigate to={resolvePostAuthRedirect(from, user?.role)} replace />;
   }
 
   return <Outlet />;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { motion } from "motion/react";
 import { Eye, Loader2, Pencil, Plus, Search, Trash2, UserCog, Users } from "lucide-react";
@@ -20,7 +20,8 @@ import {
 } from "../../components/admin/AdminResponsiveTable";
 import { ROUTES } from "../../constants/routes";
 import { useAuth } from "../../hooks/useAuth";
-import { useAdminPagination } from "../../hooks/useAdminPagination";
+import { useDebouncedValue, useServerAdminPagination } from "../../hooks/useAdminPagination";
+import { buildListQueryParams } from "../../utils/adminPaginationHelpers";
 
 const EASE = [0.22, 1, 0.36, 1];
 
@@ -46,12 +47,21 @@ export default function AdminUsersPage() {
   const [admins, setAdmins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const pagination = useServerAdminPagination({ resetKey: debouncedSearch });
 
   const loadAdmins = useCallback(async () => {
     setLoading(true);
-    const result = await adminUsersServiceApi.listAdmins(token);
+    const result = await adminUsersServiceApi.listAdmins(
+      token,
+      buildListQueryParams({
+        page: pagination.page,
+        per_page: pagination.pageSize,
+        search: debouncedSearch,
+      })
+    );
     setLoading(false);
 
     if (!result.ok) {
@@ -59,35 +69,18 @@ export default function AdminUsersPage() {
       return;
     }
 
-    setAdmins(Array.isArray(result.data) ? result.data : []);
-  }, [token]);
+    const { items, shouldRefetch } = pagination.syncFromResponse(result.data, pagination.page);
+    if (shouldRefetch) return;
+
+    setAdmins(items);
+  }, [token, pagination.page, pagination.pageSize, pagination.syncFromResponse, debouncedSearch]);
 
   useEffect(() => {
     loadAdmins();
   }, [loadAdmins]);
 
-  const filteredAdmins = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return admins;
-
-    return admins.filter((admin) => {
-      const haystack = [
-        admin.first_name,
-        admin.last_name,
-        admin.email,
-        admin.phone_number,
-        admin.role?.name,
-        admin.status,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      return haystack.includes(query);
-    });
-  }, [admins, search]);
-
-  const pagination = useAdminPagination(filteredAdmins, { resetKey: search });
+  const hasSearch = Boolean(debouncedSearch.trim());
+  const isEmpty = !loading && admins.length === 0;
 
   async function handleDelete() {
     if (!deleteTarget) return;
@@ -139,16 +132,16 @@ export default function AdminUsersPage() {
         <div className="flex items-center justify-center rounded-2xl border border-black/8 bg-white py-24">
           <Loader2 className="h-7 w-7 animate-spin text-brand-green" aria-hidden />
         </div>
-      ) : filteredAdmins.length === 0 ? (
+      ) : isEmpty ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-black/12 bg-white py-20 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-cream text-brand-green">
             <Users className="h-6 w-6" strokeWidth={1.75} aria-hidden />
           </span>
-          <p className="font-bold text-brand-ink">{search ? "No admins match your search" : "No admin accounts yet"}</p>
+          <p className="font-bold text-brand-ink">{hasSearch ? "No admins match your search" : "No admin accounts yet"}</p>
           <p className="max-w-sm text-sm text-brand-muted">
-            {search ? "Try a different search term." : "Create the first administrator account to get started."}
+            {hasSearch ? "Try a different search term." : "Create the first administrator account to get started."}
           </p>
-          {!search ? (
+          {!hasSearch ? (
             <Link to={ROUTES.admin.userNew} className="btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm">
               <Plus className="h-4 w-4" strokeWidth={2} aria-hidden />
               Add admin
@@ -158,7 +151,7 @@ export default function AdminUsersPage() {
       ) : (
         <>
           <AdminTableMobile>
-            {pagination.paginatedItems.map((admin, index) => (
+            {admins.map((admin, index) => (
               <motion.div
                 key={admin.id}
                 initial={{ opacity: 0, y: 6 }}
@@ -230,7 +223,7 @@ export default function AdminUsersPage() {
                 </tr>
               </thead>
               <tbody>
-                {pagination.paginatedItems.map((admin, index) => (
+                {admins.map((admin, index) => (
                   <motion.tr
                     key={admin.id}
                     initial={{ opacity: 0, y: 6 }}

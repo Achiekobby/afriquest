@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from "react-router";
 import { ROUTES } from "../constants/routes";
 import { useAuth } from "../hooks/useAuth";
+import { normalizeEmailOrPhoneForApi } from "../utils/phoneUtils";
 
 export default function ProtectedRoute() {
   const { isAuthenticated, isVerified, user } = useAuth();
@@ -16,7 +17,7 @@ export default function ProtectedRoute() {
         to={ROUTES.verify}
         replace
         state={{
-          emailOrPhone: user.email || user.phone,
+          emailOrPhone: user.email || normalizeEmailOrPhoneForApi(user.phone),
           from: location,
         }}
       />

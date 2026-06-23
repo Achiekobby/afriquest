@@ -2,7 +2,7 @@ import { Link } from "react-router";
 import { motion } from "motion/react";
 import Container from "../layout/Container";
 import { ROUTES } from "../../constants/routes";
-import { operatingHubs } from "../../data/homeContent";
+import { ghanaPackageHubs, operatingHubs } from "../../data/homeContent";
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -20,17 +20,17 @@ function KentePattern() {
   );
 }
 
-function HubCard({ hub, index }) {
+function HubCard({ hub, index, to }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 24 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-40px" }}
-      transition={{ duration: 0.65, ease: EASE, delay: index * 0.1 }}
+      transition={{ duration: 0.65, ease: EASE, delay: index * 0.08 }}
     >
       <Link
-        to={ROUTES.toursWithCountry(hub.filterId)}
-        className="group block overflow-hidden rounded-[1.75rem] border border-brand-border/60 bg-white shadow-[0_12px_40px_-24px_rgba(28,43,38,0.35)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_48px_-20px_rgba(28,43,38,0.28)]"
+        to={to}
+        className="group block h-full overflow-hidden rounded-[1.75rem] border border-brand-border/60 bg-white shadow-[0_12px_40px_-24px_rgba(28,43,38,0.35)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_48px_-20px_rgba(28,43,38,0.28)]"
       >
         <div className="relative aspect-[4/3] overflow-hidden">
           <img
@@ -74,16 +74,52 @@ export default function HomeHubs() {
           className="mx-auto max-w-2xl text-center"
         >
           <p className="text-sm font-semibold uppercase tracking-[0.14em] text-brand-orange">Where we operate</p>
-          <h2 className="mt-3 text-3xl font-bold text-brand-ink sm:text-4xl">Our three hubs</h2>
+          <h2 className="mt-3 text-3xl font-bold text-brand-ink sm:text-4xl">Ghana packages &amp; regional hubs</h2>
           <p className="mt-3 text-base leading-relaxed text-brand-muted">
-            Three countries. Deeply known. Authentically delivered.
+            Explore Ghana by package line — Accra, Kumasi, Volta, and End of Year — plus our Kenya and South Africa hubs.
           </p>
         </motion.div>
 
-        <div className="mt-12 grid gap-6 sm:grid-cols-3">
-          {operatingHubs.map((hub, index) => (
-            <HubCard key={hub.name} hub={hub} index={index} />
-          ))}
+        <div className="mt-10">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-muted">Ghana packages</p>
+              <p className="mt-1 text-sm text-brand-muted">Curated departures by destination and season</p>
+            </div>
+            <Link
+              to={ROUTES.toursSearch({ country: "ghana" })}
+              className="text-sm font-semibold text-brand-green transition-colors hover:text-brand-green-dark"
+            >
+              All Ghana tours →
+            </Link>
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {ghanaPackageHubs.map((hub, index) => (
+              <HubCard
+                key={hub.packageId}
+                hub={hub}
+                index={index}
+                to={ROUTES.toursSearch({ country: "ghana", package: hub.packageId })}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-14">
+          <div className="mb-4">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-muted">Regional hubs</p>
+            <p className="mt-1 text-sm text-brand-muted">East and Southern Africa</p>
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2">
+            {operatingHubs.map((hub, index) => (
+              <HubCard
+                key={hub.name}
+                hub={hub}
+                index={index}
+                to={ROUTES.toursWithCountry(hub.filterId)}
+              />
+            ))}
+          </div>
         </div>
       </Container>
     </section>
