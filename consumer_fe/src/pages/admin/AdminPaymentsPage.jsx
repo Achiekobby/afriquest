@@ -89,7 +89,16 @@ export default function AdminPaymentsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [methodFilter, setMethodFilter] = useState("all");
   const debouncedSearch = useDebouncedValue(search);
-  const pagination = useServerAdminPagination({
+  const {
+    page,
+    setPage,
+    pageSize,
+    totalItems,
+    totalPages,
+    rangeStart,
+    rangeEnd,
+    syncFromResponse,
+  } = useServerAdminPagination({
     resetKey: `${debouncedSearch}-${statusFilter}-${methodFilter}`,
   });
 
@@ -106,8 +115,8 @@ export default function AdminPaymentsPage() {
       const result = await adminPaymentsServiceApi.listPayments(
         token,
         buildListQueryParams({
-          page: pagination.page,
-          per_page: pagination.pageSize,
+          page,
+          per_page: pageSize,
           search: debouncedSearch,
           status: statusFilter !== "all" ? statusFilter : undefined,
           payment_method: methodFilter !== "all" ? methodFilter : undefined,
@@ -123,9 +132,9 @@ export default function AdminPaymentsPage() {
         return;
       }
 
-      const { items, shouldRefetch } = pagination.syncFromResponse(
+      const { items, shouldRefetch } = syncFromResponse(
         { items: result.items, pagination: result.pagination },
-        pagination.page,
+        page,
       );
 
       if (cancelled || shouldRefetch) return;
@@ -138,15 +147,7 @@ export default function AdminPaymentsPage() {
     return () => {
       cancelled = true;
     };
-  }, [
-    token,
-    pagination.page,
-    pagination.pageSize,
-    pagination.syncFromResponse,
-    debouncedSearch,
-    statusFilter,
-    methodFilter,
-  ]);
+  }, [token, page, pageSize, syncFromResponse, debouncedSearch, statusFilter, methodFilter]);
 
   const pageSummary = useMemo(() => summarizeAdminPayments(payments), [payments]);
   const isEmpty = !loading && payments.length === 0;
@@ -213,7 +214,7 @@ export default function AdminPaymentsPage() {
                   type="button"
                   onClick={() => {
                     setStatusFilter(filter.id);
-                    pagination.setPage(1);
+                    setPage(1);
                   }}
                   className={[
                     "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
@@ -232,7 +233,7 @@ export default function AdminPaymentsPage() {
                   type="button"
                   onClick={() => {
                     setMethodFilter(filter.id);
-                    pagination.setPage(1);
+                    setPage(1);
                   }}
                   className={[
                     "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
@@ -395,15 +396,15 @@ export default function AdminPaymentsPage() {
           </>
         )}
 
-        {!loading && pagination.totalItems > 0 ? (
+        {!loading && totalItems > 0 ? (
           <div className="border-t border-black/8 px-4 py-3 sm:px-5">
             <AdminPagination
-              page={pagination.page}
-              totalPages={pagination.totalPages}
-              totalItems={pagination.totalItems}
-              rangeStart={pagination.rangeStart}
-              rangeEnd={pagination.rangeEnd}
-              onPageChange={pagination.setPage}
+              page={page}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+              onPageChange={setPage}
             />
           </div>
         ) : null}
