@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { motion } from "motion/react";
 import {
@@ -108,65 +108,50 @@ export default function AdminOperatorsPage() {
   const [statusFilter, setStatusFilter] = useState("active");
   const [verifiedFilter, setVerifiedFilter] = useState("all");
   const debouncedSearch = useDebouncedValue(search);
-  const {
-    page,
-    setPage,
-    pageSize,
-    totalItems,
-    totalPages,
-    rangeStart,
-    rangeEnd,
-    syncFromResponse,
-  } = useServerAdminPagination({
+  const pagination = useServerAdminPagination({
     resetKey: `${debouncedSearch}-${statusFilter}-${verifiedFilter}`,
   });
+
+  const loadOperators = useCallback(async () => {
+    if (!token) return;
+
+    setLoading(true);
+    const result = await adminOperatorsServiceApi.listOperators(
+      token,
+      buildListQueryParams({
+        page: pagination.page,
+        per_page: pagination.pageSize,
+        search: debouncedSearch,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        is_verified: resolveVerifiedParam(verifiedFilter),
+      }),
+    );
+
+    setLoading(false);
+
+    if (!result.ok) {
+      toast.error(result.reason || result.message);
+      return;
+    }
+
+    const { items, shouldRefetch } = pagination.syncFromResponse(
+      { items: result.items, pagination: result.pagination },
+      pagination.page,
+    );
+
+    if (shouldRefetch) return;
+
+    setOperators(items);
+  }, [token, pagination, debouncedSearch, statusFilter, verifiedFilter]);
 
   useEffect(() => {
     if (!token) {
       setLoading(false);
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    async function loadOperators() {
-      setLoading(true);
-      const result = await adminOperatorsServiceApi.listOperators(
-        token,
-        buildListQueryParams({
-          page,
-          per_page: pageSize,
-          search: debouncedSearch,
-          status: statusFilter !== "all" ? statusFilter : undefined,
-          is_verified: resolveVerifiedParam(verifiedFilter),
-        }),
-      );
-
-      if (cancelled) return;
-
-      setLoading(false);
-
-      if (!result.ok) {
-        toast.error(result.reason || result.message);
-        return;
-      }
-
-      const { items, shouldRefetch } = syncFromResponse(
-        { items: result.items, pagination: result.pagination },
-        page,
-      );
-
-      if (cancelled || shouldRefetch) return;
-
-      setOperators(items);
+      return;
     }
 
     loadOperators();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [token, page, pageSize, syncFromResponse, debouncedSearch, statusFilter, verifiedFilter]);
+  }, [token, loadOperators]);
 
   const pageSummary = useMemo(() => summarizeAdminOperators(operators), [operators]);
   const isEmpty = !loading && operators.length === 0;
@@ -185,7 +170,7 @@ export default function AdminOperatorsPage() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-2xl border border-black/8 bg-white px-4 py-4 shadow-sm">
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-muted">Total operators</p>
-          <p className="mt-1 text-2xl font-bold text-brand-ink">{totalItems || operators.length}</p>
+          <p className="mt-1 text-2xl font-bold text-brand-ink">{pagination.totalItems || operators.length}</p>
           <p className="mt-1 text-xs text-brand-muted">Matching filters</p>
         </div>
         <div className="rounded-2xl border border-black/8 bg-white px-4 py-4 shadow-sm">
@@ -224,7 +209,7 @@ export default function AdminOperatorsPage() {
                   type="button"
                   onClick={() => {
                     setStatusFilter(filter.id);
-                    setPage(1);
+                    pagination.setPage(1);
                   }}
                   className={[
                     "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
@@ -243,7 +228,7 @@ export default function AdminOperatorsPage() {
                   type="button"
                   onClick={() => {
                     setVerifiedFilter(filter.id);
-                    setPage(1);
+                    pagination.setPage(1);
                   }}
                   className={[
                     "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
@@ -394,15 +379,15 @@ export default function AdminOperatorsPage() {
           </>
         )}
 
-        {!loading && totalItems > 0 ? (
+        {!loading && pagination.totalItems > 0 ? (
           <div className="border-t border-black/8 px-4 py-3 sm:px-5">
             <AdminPagination
-              page={page}
-              totalPages={totalPages}
-              totalItems={totalItems}
-              rangeStart={rangeStart}
-              rangeEnd={rangeEnd}
-              onPageChange={setPage}
+              page={pagination.page}
+              totalPages={pagination.totalPages}
+              totalItems={pagination.totalItems}
+              rangeStart={pagination.rangeStart}
+              rangeEnd={pagination.rangeEnd}
+              onPageChange={pagination.setPage}
             />
           </div>
         ) : null}
