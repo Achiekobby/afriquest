@@ -6,11 +6,13 @@ import {
   BookOpen,
   CalendarCheck,
   ChevronLeft,
+  CreditCard,
   LogOut,
   Map,
   Menu,
   MessageSquare,
   ShieldCheck,
+  Store,
   UserCircle,
   UserCog,
   Users,
@@ -32,6 +34,14 @@ const PERMISSION_NAV_MAP = {
   [ADMIN_PERMISSIONS.ROLE_MANAGEMENT]: { to: ROUTES.admin.roles, label: "Roles & permissions", icon: BookOpen },
   [ADMIN_PERMISSIONS.USER_MANAGEMENT]: { to: ROUTES.admin.users, label: "User accounts", icon: UserCog },
 };
+
+const BOOKING_EXTRA_NAV = [
+  { to: ROUTES.admin.payments, label: "Payments", icon: CreditCard },
+];
+
+const LISTING_EXTRA_NAV = [
+  { to: ROUTES.admin.operators, label: "Operators", icon: Store },
+];
 
 function NavItem({ to, label, icon: Icon, end = false, collapsed = false, onClick }) {
   return (
@@ -83,9 +93,22 @@ function Sidebar({ user, collapsed, onCollapse, onNavigate }) {
   const { logout } = useAuth();
   const permissionNames = (user?.permissions ?? []).map((p) => p.name);
 
-  const managementItems = Object.entries(PERMISSION_NAV_MAP).filter(([key]) =>
-    permissionNames.includes(key)
-  );
+  const managementItems = Object.entries(PERMISSION_NAV_MAP).flatMap(([key, item]) => {
+    if (!permissionNames.includes(key)) return [];
+
+    const items = [{ key, ...item }];
+    if (key === ADMIN_PERMISSIONS.BOOKING_MANAGEMENT) {
+      BOOKING_EXTRA_NAV.forEach((extra) => {
+        items.push({ key: `${key}-${extra.to}`, ...extra });
+      });
+    }
+    if (key === ADMIN_PERMISSIONS.LISTING_MANAGEMENT) {
+      LISTING_EXTRA_NAV.forEach((extra) => {
+        items.push({ key: `${key}-${extra.to}`, ...extra });
+      });
+    }
+    return items;
+  });
 
   return (
     <div className="flex h-full flex-col bg-[#111a16]">
@@ -113,8 +136,8 @@ function Sidebar({ user, collapsed, onCollapse, onNavigate }) {
 
         {managementItems.length > 0 && (
           <NavSection title="Management" collapsed={collapsed}>
-            {managementItems.map(([key, item]) => (
-              <NavItem key={key} to={item.to} label={item.label} icon={item.icon} collapsed={collapsed} onClick={onNavigate} />
+            {managementItems.map((item) => (
+              <NavItem key={item.key} to={item.to} label={item.label} icon={item.icon} collapsed={collapsed} onClick={onNavigate} />
             ))}
           </NavSection>
         )}

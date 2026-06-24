@@ -66,10 +66,22 @@ export function paginateLocalItems(items, page, pageSize = DEFAULT_SERVER_PAGE_S
   };
 }
 
-export function buildListQueryParams({ page = 1, per_page = DEFAULT_SERVER_PAGE_SIZE, search } = {}) {
+export function buildListQueryParams({
+  page = 1,
+  per_page = DEFAULT_SERVER_PAGE_SIZE,
+  search,
+  status,
+  payment_status,
+  payment_method,
+  is_verified,
+} = {}) {
   return {
     page,
     per_page,
     ...(search?.trim() ? { search: search.trim() } : {}),
+    ...(status ? { status } : {}),
+    ...(payment_status ? { payment_status } : {}),
+    ...(payment_method ? { payment_method } : {}),
+    ...(is_verified !== undefined && is_verified !== null ? { is_verified } : {}),
   };
 }

@@ -1,13 +1,20 @@
 import { Navigate, Route } from "react-router";
 import AdminLayout from "../layouts/AdminLayout";
 import { ADMIN_PERMISSIONS } from "../constants/adminPermissions";
+import AdminBookingDetailPage from "../pages/admin/AdminBookingDetailPage";
 import AdminBookingsPage from "../pages/admin/AdminBookingsPage";
+import AdminClientDetailPage from "../pages/admin/AdminClientDetailPage";
 import AdminClientsPage from "../pages/admin/AdminClientsPage";
 import AdminContactDetailPage from "../pages/admin/AdminContactDetailPage";
 import AdminContactsPage from "../pages/admin/AdminContactsPage";
 import AdminDashboardPage from "../pages/admin/AdminDashboardPage";
+import AdminListingDetailPage from "../pages/admin/AdminListingDetailPage";
 import AdminListingsPage from "../pages/admin/AdminListingsPage";
 import AdminLoginPage from "../pages/admin/AdminLoginPage";
+import AdminOperatorDetailPage from "../pages/admin/AdminOperatorDetailPage";
+import AdminOperatorsPage from "../pages/admin/AdminOperatorsPage";
+import AdminPaymentDetailPage from "../pages/admin/AdminPaymentDetailPage";
+import AdminPaymentsPage from "../pages/admin/AdminPaymentsPage";
 import AdminProfilePage from "../pages/admin/AdminProfilePage";
 import AdminRolesPage from "../pages/admin/AdminRolesPage";
 import AdminUserDetailPage from "../pages/admin/AdminUserDetailPage";
@@ -36,10 +43,14 @@ const adminRoutes = (
 
         <Route element={<AdminPermissionRoute permission={ADMIN_PERMISSIONS.CLIENT_MANAGEMENT} />}>
           <Route path="clients" element={<AdminClientsPage />} />
+          <Route path="clients/:clientSlug" element={<AdminClientDetailPage />} />
         </Route>
 
         <Route element={<AdminPermissionRoute permission={ADMIN_PERMISSIONS.BOOKING_MANAGEMENT} />}>
           <Route path="bookings" element={<AdminBookingsPage />} />
+          <Route path="bookings/:bookingCode" element={<AdminBookingDetailPage />} />
+          <Route path="payments" element={<AdminPaymentsPage />} />
+          <Route path="payments/:paymentSlug" element={<AdminPaymentDetailPage />} />
         </Route>
 
         <Route element={<AdminPermissionRoute permission={ADMIN_PERMISSIONS.CONTACT_MANAGEMENT} />}>
@@ -49,6 +60,9 @@ const adminRoutes = (
 
         <Route element={<AdminPermissionRoute permission={ADMIN_PERMISSIONS.LISTING_MANAGEMENT} />}>
           <Route path="listings" element={<AdminListingsPage />} />
+          <Route path="listings/:slug" element={<AdminListingDetailPage />} />
+          <Route path="operators" element={<AdminOperatorsPage />} />
+          <Route path="operators/:operatorSlug" element={<AdminOperatorDetailPage />} />
         </Route>
 
         <Route element={<AdminPermissionRoute permission={ADMIN_PERMISSIONS.ROLE_MANAGEMENT} />}>

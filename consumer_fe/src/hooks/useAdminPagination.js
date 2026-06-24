@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_SERVER_PAGE_SIZE,
   mapServerPagination,
@@ -66,33 +66,52 @@ export function useServerAdminPagination({ pageSize = DEFAULT_SERVER_PAGE_SIZE, 
     hasPagination: false,
   });
 
+  const pageRef = useRef(page);
+  pageRef.current = page;
+
   useEffect(() => {
     setPage(1);
   }, [resetKey]);
 
   const syncFromResponse = useCallback(
-    (data, requestedPage = page) => {
+    (data, requestedPage) => {
+      const currentPage = requestedPage ?? pageRef.current;
       const { items, pagination } = parsePaginatedList(data);
-      const nextMeta = mapServerPagination(pagination, { page: requestedPage, pageSize });
+      const nextMeta = mapServerPagination(pagination, { page: currentPage, pageSize });
 
-      if (nextMeta.totalPages > 0 && requestedPage > nextMeta.totalPages) {
+      if (nextMeta.totalPages > 0 && currentPage > nextMeta.totalPages) {
         setPage(nextMeta.totalPages);
         return { items, meta: nextMeta, shouldRefetch: true };
       }
 
-      setMeta(nextMeta);
+      setMeta((prev) => {
+        if (
+          prev.totalItems === nextMeta.totalItems &&
+          prev.totalPages === nextMeta.totalPages &&
+          prev.rangeStart === nextMeta.rangeStart &&
+          prev.rangeEnd === nextMeta.rangeEnd &&
+          prev.hasPagination === nextMeta.hasPagination
+        ) {
+          return prev;
+        }
+        return nextMeta;
+      });
+
       return { items, meta: nextMeta, shouldRefetch: false };
     },
-    [page, pageSize]
+    [pageSize]
   );
 
-  return {
-    page,
-    setPage,
-    pageSize,
-    ...meta,
-    syncFromResponse,
-  };
+  return useMemo(
+    () => ({
+      page,
+      setPage,
+      pageSize,
+      ...meta,
+      syncFromResponse,
+    }),
+    [page, pageSize, meta, syncFromResponse]
+  );
 }
 
 export function useLocalAdminPagination(items, { pageSize = DEFAULT_SERVER_PAGE_SIZE, resetKey } = {}) {

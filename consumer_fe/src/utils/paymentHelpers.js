@@ -10,6 +10,7 @@ export function mapApiPayment(data) {
     amount: Number(data.amount) || 0,
     currency: data.currency || "GHS",
     paymentMethod: data.paymentMethod || data.booking?.paymentMode || "online",
+    status: data.status || "",
     paymentUrl: data.paymentUrl || null,
     paidAt: data.paidAt || null,
     createdAt: data.createdAt,

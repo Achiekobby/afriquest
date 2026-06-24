@@ -1,0 +1,9 @@
+[build]
+  base = "consumer_fe"
+  command = "npm run build"
+  publish = "consumer_fe/build"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

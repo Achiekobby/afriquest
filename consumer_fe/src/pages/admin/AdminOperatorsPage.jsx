@@ -7,10 +7,10 @@ import {
   Loader2,
   MapPin,
   Search,
-  Users,
+  Store,
 } from "lucide-react";
 import { toast } from "react-toastify";
-import adminClientsServiceApi from "../../apis/AdminClientsServiceApi";
+import adminOperatorsServiceApi from "../../apis/AdminOperatorsServiceApi";
 import AdminPagination from "../../components/admin/AdminPagination";
 import {
   AdminMobileCard,
@@ -28,10 +28,10 @@ import { useAuth } from "../../hooks/useAuth";
 import { useDebouncedValue, useServerAdminPagination } from "../../hooks/useAdminPagination";
 import { buildListQueryParams } from "../../utils/adminPaginationHelpers";
 import {
-  formatAdminClientDate,
-  getAdminClientStatusConfig,
-  summarizeAdminClients,
-} from "../../utils/adminClientHelpers";
+  formatAdminOperatorDate,
+  getAdminOperatorStatusConfig,
+  summarizeAdminOperators,
+} from "../../utils/adminOperatorHelpers";
 
 const EASE = [0.22, 1, 0.36, 1];
 
@@ -42,8 +42,14 @@ const STATUS_FILTERS = [
   { id: "suspended", label: "Suspended" },
 ];
 
-function StatusBadge({ client }) {
-  const config = getAdminClientStatusConfig(client);
+const VERIFIED_FILTERS = [
+  { id: "all", label: "All operators" },
+  { id: "verified", label: "Verified" },
+  { id: "unverified", label: "Unverified" },
+];
+
+function StatusBadge({ operator }) {
+  const config = getAdminOperatorStatusConfig(operator);
   return (
     <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${config.className}`}>
       {config.label}
@@ -51,28 +57,8 @@ function StatusBadge({ client }) {
   );
 }
 
-function ClientAvatar({ client }) {
-  if (client.profileImage) {
-    return (
-      <img
-        src={client.profileImage}
-        alt=""
-        className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-black/8"
-      />
-    );
-  }
-
-  const initial = (client.firstName?.[0] || client.email?.[0] || "C").toUpperCase();
-
-  return (
-    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sm font-bold text-sky-700 ring-1 ring-sky-200">
-      {initial}
-    </span>
-  );
-}
-
-function VerifiedBadge({ client }) {
-  if (!client.isVerified) {
+function VerifiedBadge({ operator }) {
+  if (!operator.isVerified) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-brand-cream px-2 py-0.5 text-[10px] font-semibold text-brand-muted">
         Unverified
@@ -88,14 +74,43 @@ function VerifiedBadge({ client }) {
   );
 }
 
-export default function AdminClientsPage() {
+function OperatorAvatar({ operator }) {
+  if (operator.profileImage) {
+    return (
+      <img
+        src={operator.profileImage}
+        alt=""
+        className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-black/8"
+      />
+    );
+  }
+
+  const initial = (operator.organization?.[0] || operator.firstName?.[0] || operator.email?.[0] || "O").toUpperCase();
+
+  return (
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-gold/15 text-sm font-bold text-brand-orange ring-1 ring-brand-gold/30">
+      {initial}
+    </span>
+  );
+}
+
+function resolveVerifiedParam(filter) {
+  if (filter === "verified") return true;
+  if (filter === "unverified") return false;
+  return undefined;
+}
+
+export default function AdminOperatorsPage() {
   const { token } = useAuth();
-  const [clients, setClients] = useState([]);
+  const [operators, setOperators] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("active");
+  const [verifiedFilter, setVerifiedFilter] = useState("all");
   const debouncedSearch = useDebouncedValue(search);
-  const pagination = useServerAdminPagination({ resetKey: `${debouncedSearch}-${statusFilter}` });
+  const pagination = useServerAdminPagination({
+    resetKey: `${debouncedSearch}-${statusFilter}-${verifiedFilter}`,
+  });
 
   useEffect(() => {
     if (!token) {
@@ -105,15 +120,16 @@ export default function AdminClientsPage() {
 
     let cancelled = false;
 
-    async function loadClients() {
+    async function loadOperators() {
       setLoading(true);
-      const result = await adminClientsServiceApi.listClients(
+      const result = await adminOperatorsServiceApi.listOperators(
         token,
         buildListQueryParams({
           page: pagination.page,
           per_page: pagination.pageSize,
           search: debouncedSearch,
           status: statusFilter !== "all" ? statusFilter : undefined,
+          is_verified: resolveVerifiedParam(verifiedFilter),
         }),
       );
 
@@ -133,35 +149,43 @@ export default function AdminClientsPage() {
 
       if (cancelled || shouldRefetch) return;
 
-      setClients(items);
+      setOperators(items);
     }
 
-    loadClients();
+    loadOperators();
 
     return () => {
       cancelled = true;
     };
-  }, [token, pagination.page, pagination.pageSize, pagination.syncFromResponse, debouncedSearch, statusFilter]);
+  }, [
+    token,
+    pagination.page,
+    pagination.pageSize,
+    pagination.syncFromResponse,
+    debouncedSearch,
+    statusFilter,
+    verifiedFilter,
+  ]);
 
-  const pageSummary = useMemo(() => summarizeAdminClients(clients), [clients]);
-  const isEmpty = !loading && clients.length === 0;
-  const hasFilters = debouncedSearch || statusFilter !== "all";
+  const pageSummary = useMemo(() => summarizeAdminOperators(operators), [operators]);
+  const isEmpty = !loading && operators.length === 0;
+  const hasFilters = debouncedSearch || statusFilter !== "all" || verifiedFilter !== "all";
 
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">Client management</p>
-        <h1 className="mt-1 font-heading text-3xl font-bold text-brand-ink">Clients</h1>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">Operator management</p>
+        <h1 className="mt-1 font-heading text-3xl font-bold text-brand-ink">Operators</h1>
         <p className="mt-2 text-sm text-brand-muted">
-          View registered travelers — account status, verification, and contact details.
+          View tour operators on the platform — verification status, organization details, and contact info.
         </p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-2xl border border-black/8 bg-white px-4 py-4 shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-muted">Total clients</p>
-          <p className="mt-1 text-2xl font-bold text-brand-ink">{pagination.totalItems || clients.length}</p>
-          <p className="mt-1 text-xs text-brand-muted">Across platform</p>
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-muted">Total operators</p>
+          <p className="mt-1 text-2xl font-bold text-brand-ink">{pagination.totalItems || operators.length}</p>
+          <p className="mt-1 text-xs text-brand-muted">Matching filters</p>
         </div>
         <div className="rounded-2xl border border-black/8 bg-white px-4 py-4 shadow-sm">
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-muted">Active (page)</p>
@@ -188,7 +212,7 @@ export default function AdminClientsPage() {
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by name, email, phone, or location…"
+                placeholder="Search by name, organization, email, or location…"
                 className="w-full rounded-xl border border-brand-border/70 bg-brand-cream/30 py-2.5 pl-10 pr-3 text-sm outline-none transition-shadow focus:border-brand-green focus:ring-2 focus:ring-brand-green/15"
               />
             </div>
@@ -211,6 +235,25 @@ export default function AdminClientsPage() {
                   {filter.label}
                 </button>
               ))}
+              <span className="mx-1 hidden h-6 w-px bg-black/10 sm:block" aria-hidden />
+              {VERIFIED_FILTERS.map((filter) => (
+                <button
+                  key={filter.id}
+                  type="button"
+                  onClick={() => {
+                    setVerifiedFilter(filter.id);
+                    pagination.setPage(1);
+                  }}
+                  className={[
+                    "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+                    verifiedFilter === filter.id
+                      ? "bg-brand-green text-white"
+                      : "bg-brand-cream text-brand-muted hover:text-brand-ink",
+                  ].join(" ")}
+                >
+                  {filter.label}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -221,61 +264,61 @@ export default function AdminClientsPage() {
           </div>
         ) : isEmpty ? (
           <div className="flex flex-col items-center gap-3 py-20 text-center">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-600">
-              <Users className="h-6 w-6" strokeWidth={1.75} aria-hidden />
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-gold/15 text-brand-orange">
+              <Store className="h-6 w-6" strokeWidth={1.75} aria-hidden />
             </span>
-            <p className="text-base font-bold text-brand-ink">No clients found</p>
+            <p className="text-base font-bold text-brand-ink">No operators found</p>
             <p className="max-w-sm text-sm text-brand-muted">
               {hasFilters
                 ? "Try adjusting your search or filters."
-                : "Registered traveler accounts will appear here."}
+                : "Registered tour operator accounts will appear here."}
             </p>
           </div>
         ) : (
           <>
             <AdminTableMobile columns={1}>
-              {clients.map((client, index) => (
+              {operators.map((operator, index) => (
                 <motion.div
-                  key={client.clientSlug || client.id}
+                  key={operator.operatorSlug}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.35, ease: EASE, delay: index * 0.03 }}
                 >
                   <AdminMobileCard>
                     <AdminMobileCardHeader
-                      title={client.name || "—"}
-                      subtitle={client.email}
-                      avatar={<ClientAvatar client={client} />}
+                      title={operator.organization || operator.name || "—"}
+                      subtitle={operator.name || operator.email}
+                      avatar={<OperatorAvatar operator={operator} />}
                       trailing={
                         <div className="flex flex-wrap items-center gap-1">
-                          <StatusBadge client={client} />
-                          <VerifiedBadge client={client} />
+                          <StatusBadge operator={operator} />
+                          <VerifiedBadge operator={operator} />
                         </div>
                       }
                     />
                     <AdminMobileCardBody>
-                      <AdminMobileCardRow label="Phone" value={client.phoneNumber || "—"} />
+                      <AdminMobileCardRow label="Email" value={operator.email || "—"} />
+                      <AdminMobileCardRow label="Phone" value={operator.phoneNumber || "—"} />
                       <AdminMobileCardRow
                         label="Location"
                         value={
-                          client.location ? (
+                          operator.location ? (
                             <span className="inline-flex items-center gap-1">
                               <MapPin className="h-3 w-3 shrink-0 text-brand-muted" strokeWidth={2} aria-hidden />
-                              {client.location}
+                              {operator.location}
                             </span>
                           ) : (
                             "—"
                           )
                         }
                       />
-                      <AdminMobileCardRow label="Joined" value={formatAdminClientDate(client.createdAt)} />
-                      <AdminMobileCardRow label="Verified" value={formatAdminClientDate(client.verifiedAt)} />
+                      <AdminMobileCardRow label="Joined" value={formatAdminOperatorDate(operator.createdAt)} />
                     </AdminMobileCardBody>
                     <AdminMobileCardActions>
                       <Link
-                        to={ROUTES.admin.clientDetail(client.clientSlug)}
+                        to={ROUTES.admin.operatorDetail(operator.operatorSlug)}
                         className={`${adminIconBtnClass} ${adminIconBtnViewClass}`}
-                        aria-label={`View ${client.name}`}
+                        aria-label={`View ${operator.organization || operator.name}`}
                       >
                         <Eye className="h-4 w-4" strokeWidth={1.75} aria-hidden />
                       </Link>
@@ -289,7 +332,7 @@ export default function AdminClientsPage() {
               <table className="w-full text-left">
                 <thead className="border-b border-black/8 bg-brand-cream/50">
                   <tr>
-                    {["Client", "Contact", "Location", "Status", "Verified", "Joined", "Actions"].map((heading) => (
+                    {["Operator", "Contact", "Location", "Status", "Verified", "Joined", "Actions"].map((heading) => (
                       <th
                         key={heading}
                         className="px-5 py-3 text-[11px] font-bold uppercase tracking-[0.12em] text-brand-muted"
@@ -300,42 +343,44 @@ export default function AdminClientsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {clients.map((client) => (
+                  {operators.map((operator) => (
                     <tr
-                      key={client.clientSlug || client.id}
+                      key={operator.operatorSlug}
                       className="border-b border-black/5 last:border-0 hover:bg-brand-cream/30"
                     >
                       <td className="px-5 py-3.5">
-                        <div className="flex min-w-[10rem] items-center gap-3">
-                          <ClientAvatar client={client} />
+                        <div className="flex min-w-[11rem] items-center gap-3">
+                          <OperatorAvatar operator={operator} />
                           <div className="min-w-0">
-                            <p className="line-clamp-1 font-semibold text-brand-ink">{client.name || "—"}</p>
-                            <p className="line-clamp-1 text-xs text-brand-muted">{client.clientSlug}</p>
+                            <p className="line-clamp-1 font-semibold text-brand-ink">
+                              {operator.organization || operator.name || "—"}
+                            </p>
+                            <p className="line-clamp-1 text-xs text-brand-muted">{operator.name || operator.operatorSlug}</p>
                           </div>
                         </div>
                       </td>
                       <td className="px-5 py-3.5">
-                        <p className="line-clamp-1 text-sm text-brand-ink">{client.email || "—"}</p>
-                        <p className="line-clamp-1 text-xs text-brand-muted">{client.phoneNumber || "—"}</p>
+                        <p className="line-clamp-1 text-sm text-brand-ink">{operator.email || "—"}</p>
+                        <p className="line-clamp-1 text-xs text-brand-muted">{operator.phoneNumber || "—"}</p>
                       </td>
                       <td className="px-5 py-3.5">
-                        <p className="line-clamp-2 max-w-[12rem] text-sm text-brand-ink">{client.location || "—"}</p>
+                        <p className="line-clamp-2 max-w-[12rem] text-sm text-brand-ink">{operator.location || "—"}</p>
                       </td>
                       <td className="px-5 py-3.5">
-                        <StatusBadge client={client} />
+                        <StatusBadge operator={operator} />
                       </td>
                       <td className="px-5 py-3.5">
-                        <VerifiedBadge client={client} />
-                        {client.isVerified && client.verifiedAt ? (
-                          <p className="mt-1 text-[10px] text-brand-muted">{formatAdminClientDate(client.verifiedAt)}</p>
+                        <VerifiedBadge operator={operator} />
+                        {operator.isVerified && operator.verifiedAt ? (
+                          <p className="mt-1 text-[10px] text-brand-muted">{formatAdminOperatorDate(operator.verifiedAt)}</p>
                         ) : null}
                       </td>
-                      <td className="px-5 py-3.5 text-sm text-brand-ink">{formatAdminClientDate(client.createdAt)}</td>
+                      <td className="px-5 py-3.5 text-sm text-brand-ink">{formatAdminOperatorDate(operator.createdAt)}</td>
                       <td className="px-5 py-3.5">
                         <Link
-                          to={ROUTES.admin.clientDetail(client.clientSlug)}
+                          to={ROUTES.admin.operatorDetail(operator.operatorSlug)}
                           className={`${adminIconBtnClass} ${adminIconBtnViewClass}`}
-                          aria-label={`View ${client.name}`}
+                          aria-label={`View ${operator.organization || operator.name}`}
                         >
                           <Eye className="h-4 w-4" strokeWidth={1.75} aria-hidden />
                         </Link>
